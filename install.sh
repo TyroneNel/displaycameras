@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Exit on error and undefined variables
+set -e
+set -u
 # Run as root to install the displaycameras package for streaming video feeds.
 # Systemd init system is presumed.  If installing on 'nix with other init
 # systems, you will have to edit this script or enable the displaycameras
@@ -38,7 +42,7 @@ else
 	exit 2
 fi
 # Config files, cron job, gpu memory split, and disable overscan support only if not upgrading
-if [ "$1" != "upgrade" ]; then
+if [ "${1:-}" != "upgrade" ]; then
 	if [ -r $DIR/displaycameras.conf ]; then
 		if [ -r /etc/displaycameras/displaycameras.conf ]; then
 			[ -d /etc/displaycameras/bak ] || mkdir /etc/displaycameras/bak
@@ -49,8 +53,33 @@ if [ "$1" != "upgrade" ]; then
 		fi
 		echo "Copying the global and layout configuration files."
 		[ -d /etc/displaycameras ] || mkdir /etc/displaycameras
-		cp -f $DIR/layout.conf.default /etc/displaycameras/ && chown root:root /etc/displaycameras/layout.conf.default && chmod 0644 /etc/displaycameras/layout.conf.default
-		cp -f $DIR/displaycameras.conf /etc/displaycameras/ && chown root:root /etc/displaycameras/displaycameras.conf && chmod 0644 /etc/displaycameras/displaycameras.conf
+		
+		# Function to clean up files (remove BOM and ensure Unix line endings)
+		cleanup_file() {
+			local src="$1"
+			local dest="$2"
+			# Copy file first
+			cp -f "$src" "$dest"
+			# Remove BOM if exists and ensure Unix line endings
+			sed -i '1s/^\xEF\xBB\xBF//' "$dest"
+			dos2unix "$dest" 2>/dev/null || true
+		}
+
+		# Copy and clean up each config file
+		cleanup_file "$DIR/layout.conf.default" "/etc/displaycameras/layout.conf.default"
+		cleanup_file "$DIR/displaycameras.conf" "/etc/displaycameras/displaycameras.conf"
+		
+		# Set permissions
+		chown root:root /etc/displaycameras/*.conf /etc/displaycameras/*.default
+		chmod 0644 /etc/displaycameras/*.conf /etc/displaycameras/*.default
+
+		# Copy 1920x1080 layout if it exists
+		if [ -r "$DIR/layout.conf.1920x1080" ]; then
+			cleanup_file "$DIR/layout.conf.1920x1080" "/etc/displaycameras/layout.conf.1920x1080"
+			chown root:root /etc/displaycameras/layout.conf.1920x1080
+			chmod 0644 /etc/displaycameras/layout.conf.1920x1080
+			echo "Copied and cleaned 1920x1080 layout configuration."
+		fi
 	else
 		echo "The displaycameras.conf file is missing or unreadable. This is a critical file."
 		echo "Verify package contents."
@@ -83,8 +112,8 @@ if [ "$1" != "upgrade" ]; then
 		fi
 	fi
 	# Ask whether there's a custom split desired
-	echo -n "Enter a custom gpu split if desired [gpu memory in MB] or [Enter] to use recommended split"
-	read
+	echo -n "Enter a custom gpu split if desired [gpu memory in MB] or [Enter] to use recommended split: "
+	read -r REPLY
 	if [ "$REPLY" != "" ]; then
 		if [ "$REPLY" -ge "64" -a "$REPLY" -le "512" ]; then
 			split="$REPLY"
@@ -129,10 +158,10 @@ systemctl daemon-reload
 systemctl enable displaycameras
 
 echo "Installation Successful!"
-read -p "See the README.md? [Y/y/N/n]"
+read -r -p "See the README.md? [Y/y/N/n] " REPLY
 if [ "$REPLY" = "Y" -o "$REPLY" = "y" ]; then
 	echo "Use the space bar (or PgDn) to page down, PgUp to page up, q to quit"
-	read -p "Press Enter to begin."
+	read -r -p "Press Enter to begin." -n 1
 	less $DIR/README.md
 fi
 exit 0
