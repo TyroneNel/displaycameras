@@ -1,0 +1,13 @@
+/var/log/displaycameras.log {
+    size 10M
+    rotate 3
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 root root
+    maxage 30
+    postrotate
+        systemctl restart rsyslog >/dev/null 2>&1 || true
+    endscript
+}

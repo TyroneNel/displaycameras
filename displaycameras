@@ -15,6 +15,119 @@ set -u
 
 #version:0.8.3
 
+# Logging function
+log() {
+    local level="$1"
+    shift
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $*" >> /var/log/displaycameras.log
+}
+
+# Network connectivity check function
+check_network_connectivity() {
+    local url="$1"
+    local host=$(echo "$url" | awk -F[/:] '{print $4}')
+    local port=$(echo "$url" | awk -F[/:] '{print $5}')
+    local max_attempts=3
+    local attempt=1
+    
+    # If no port specified in URL, don't include it in log messages
+    if [ -z "$port" ]; then
+        port_msg=""
+    else
+        port_msg=":$port"
+    fi
+    
+    while [ $attempt -le $max_attempts ]; do
+        if ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
+            if [ ! -z "$port" ]; then
+                # If port is specified, try a TCP connection
+                if nc -z -w2 "$host" "$port" >/dev/null 2>&1; then
+                    return 0
+                fi
+            else
+                return 0
+            fi
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    log "ERROR" "Failed to reach host $host$port_msg after $max_attempts attempts"
+    return 1
+}
+
+# Stream health check function
+check_stream_health() {
+    local camera_name="$1"
+    local max_checks=3
+    local check=1
+    
+    while [ $check -le $max_checks ]; do
+        local status="$(omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null)"
+        local position="$(omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null)"
+        
+        if [ "$status" = "Playing" ] && [ "$position" != "0s" ]; then
+            return 0
+        fi
+        check=$((check + 1))
+        sleep 1
+    done
+    log "ERROR" "Stream health check failed for camera $camera_name"
+    return 1
+}
+
+# Enhanced repair function
+repair_stream() {
+    local camera_idx="$1"
+    local max_repair_attempts=5
+    local attempt=1
+    
+    log "INFO" "Attempting to repair stream for camera ${camera_names[$camera_idx]}"
+    
+    while [ $attempt -le $max_repair_attempts ]; do
+        log "INFO" "Repair attempt $attempt for ${camera_names[$camera_idx]}"
+        
+        # Extract host from camera feed URL
+        local host=$(echo "${camera_feeds[$camera_idx]}" | awk -F/ '{print $3}')
+        
+        # Check network connectivity first
+        if ! check_network_connectivity "${camera_feeds[$camera_idx]}"; then
+            log "ERROR" "Network connectivity check failed for ${camera_names[$camera_idx]}"
+            sleep 5
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Stop existing stream
+        omxplayer_dbuscontrol "${camera_names[$camera_idx]}" quit >/dev/null 2>&1
+        sleep 2
+        
+        # Start new stream
+        x=$((camera_idx+$DISPLAY_SEQUENCE))
+        if [ "$x" -ge "${#camera_names[@]}" ]; then 
+            x=$((x-${#camera_names[@]}))
+        fi
+        
+        player="omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win \"${window_positions[$x]}\" \"${camera_feeds[$camera_idx]}\" --live -n -1 --timeout $omx_timeout --dbus_name \"org.mpris.MediaPlayer2.omxplayer.${camera_names[$camera_idx]}\" >/dev/null 2>&1 &"
+        log "INFO" "Restarting stream for ${camera_names[$camera_idx]}"
+        eval $player
+        
+        sleep $startsleep
+        
+        # Check if stream is healthy
+        if check_stream_health "${camera_names[$camera_idx]}"; then
+            log "INFO" "Successfully repaired stream for ${camera_names[$camera_idx]}"
+            return 0
+        fi
+        
+        log "WARN" "Repair attempt $attempt failed for ${camera_names[$camera_idx]}"
+        attempt=$((attempt + 1))
+        sleep 3
+    done
+    
+    log "ERROR" "Failed to repair stream for ${camera_names[$camera_idx]} after $max_repair_attempts attempts"
+    return 1
+}
+
 # Exit if not root
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root"
@@ -106,9 +219,18 @@ case "$1" in
 # Start displaying camera feeds
 start)
 if [ -f $PIDFILE ]; then
-	echo "PID file exists!  Stop or Restart this service instead."
-exit 1
+    log "ERROR" "PID file exists! Stop or Restart this service instead."
+    exit 1
 fi
+
+# Check network connectivity for all cameras before starting
+for i in ${!camera_feeds[@]}; do
+    if ! check_network_connectivity "${camera_feeds[$i]}"; then
+        log "ERROR" "Initial network connectivity check failed for ${camera_names[$i]}"
+        exit 1
+    fi
+done
+
 if [ "$blank" = "true" ]; then
 	echo "Blanking screen"
 	fbi --noverbose -T 2 /usr/bin/black.png >/dev/null 2>&1 &
@@ -209,73 +331,27 @@ $0 start
 # Restart any camera feeds that don't claim to be playing or restart the service
 # if too many omxplayer.bin instances are active.
 repair)
-# Do nothing unless the service PID file exists
-if [ ! -f $PIDFILE ]; then exit 0; fi
-# Stop and start the service if we have too many omxplayers
-if [ `pgrep -c omxplayer.bin` -gt $cameras ]
-then
-	$0 restart
+log "INFO" "Starting repair procedure"
+if [ ! -f $PIDFILE ]; then 
+    log "INFO" "No PID file found, exiting repair"
+    exit 0
 fi
-# The actual repair part
-for i in ${!camera_names[*]}
-do
-	if [ "`omxplayer_dbuscontrol ${camera_names[$i]} getplaystatus`" != "Playing" -o "`omxplayer_dbuscontrol ${camera_names[$i]} getposition`" = "0s" ]
-	then
-		rm -f $PIDFILE
-		pkill rotatedisplays
-		omxplayer_dbuscontrol ${camera_names[$i]} quit
-		x=$((i+$DISPLAY_SEQUENCE))
-		if [ "$x" -ge "${#camera_names[@]}" ]; then x=$((x-${#camera_names[@]}))
-		fi
-		player="omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win \"${window_positions[$x]}\" \"${camera_feeds[$i]}\" --live -n -1 --timeout "$omx_timeout" --dbus_name "org.mpris.MediaPlayer2.omxplayer.${camera_names[$i]}" >/dev/null &"
-		echo "Starting omxplayer for ${camera_names[$i]}"
-		eval $player
-		sleep $startsleep
-		startupretry=0
-		feedretry=0
-		while [ "`omxplayer_dbuscontrol ${camera_names[$i]} getplaystatus`" != "Playing" ]
-		do
-			sleep 1
-			echo "Waiting for ${camera_names[$i]} omxplayer startup $startupretry"
-			if [ "$startupretry" -eq "$retry" ]; then
-				break
-			fi
-			startupretry=$((startupretry+1))
-		done
-		if [ "`omxplayer_dbuscontrol ${camera_names[$i]} getplaystatus`" = "Playing" ]
-		then
-			sleep $feedsleep
-			while [ "`omxplayer_dbuscontrol ${camera_names[$i]} getposition`" = "0s" ]
-			do
-				sleep 1
-				echo "Waiting for ${camera_names[$i]} playback $feedretry"
-				if [ "$feedretry" -eq "$retry" ]; then
-					omxplayer_dbuscontrol $i quit
-					feedfailure=true
-					break
-				fi
-				feedretry=$((feedretry+1))
-			done
-		else
-			startupfailure=true
-		fi
-		if [ "`omxplayer_dbuscontrol ${camera_names[$i]} getplaystatus`" = "Playing" ] && [ "`omxplayer_dbuscontrol ${camera_names[$i]} getposition`" != "0s" ]; then
-			echo "${camera_names[$i]} started"
-		else
-			echo "${camera_names[$i]} failed playback"
-		fi
-		touch $PIDFILE
-		if [ "$rotate" = "true" ]; then
-			if [ "$rotatedelay" = "" ]; then
-				rotatedelay=5
-			fi
-			if [ "$2" != "startup" ]; then
-				echo "Restarting camera rotation"
-				rotatedisplays $rotatedelay $seq_step &
-			fi
-		fi
-	fi
+
+for i in ${!camera_names[*]}; do
+    if ! check_stream_health "${camera_names[$i]}"; then
+        log "WARN" "Detected unhealthy stream for ${camera_names[$i]}"
+        if ! repair_stream "$i"; then
+            log "ERROR" "Failed to repair ${camera_names[$i]}"
+            feedfailure=true
+        fi
+    fi
 done
+
+if [ "$feedfailure" = "true" ]; then
+    log "ERROR" "One or more streams failed to repair"
+    exit 1
+fi
+log "INFO" "Repair procedure completed successfully"
 ;;
 
 rotate)
@@ -290,12 +366,10 @@ do
         y=$((i-DISPLAY_SEQUENCE-1))
         if [ "$y" -lt "0" ]; then y=$((y+"${#camera_names[@]}"))
         fi
-        if [ "$y" -ge "${#camera_names[@]}" ]; then y=$((y-"${#camera_names[@]}"
-))
+        if [ "$y" -ge "${#camera_names[@]}" ]; then y=$((y-"${#camera_names[@]}"))
         fi
         x=$((y+$DISPLAY_SEQUENCE))
-        if [ "$x" -ge "${#camera_names[@]}" ]; then x=$((x-"${#camera_names[@]}"
-))
+        if [ "$x" -ge "${#camera_names[@]}" ]; then x=$((x-"${#camera_names[@]}"))
         fi
         eval omxplayer_dbuscontrol "${camera_names[$y]}" setvideopos \"${window_positions[$x]}\"
 done
