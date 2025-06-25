@@ -9,11 +9,16 @@
 # Description:
 ### END INIT INFO
 
+# Exit on error and undefined variables
+set -e
+set -u
+
 #version:0.8.3
 
 # Exit if not root
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root"
+   exit 1
    exit 0
 fi
 
@@ -81,8 +86,10 @@ cameras="${#camera_names[@]}"
 # Set the max camera rotation sequence as one less than the number of cameras
 # (since it starts at zero).
 max_seq=$((cameras-1))
+# Initialize seq_step with a default value if not set
+: ${seq_step:=1}
 # Ensure sequence step value is reasonable
-if [ "$seq_step" = "" ] || [ "$seq_step" -gt "$max_seq" ] || [ "$seq_step" -lt "1" ]; then
+if [ "$seq_step" -gt "$max_seq" ] || [ "$seq_step" -lt "1" ]; then
 	seq_step=1
 fi
 

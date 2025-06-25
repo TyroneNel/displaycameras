@@ -1,4 +1,4 @@
-# !!!Warning!!!
+﻿# !!!Warning!!!
 As of Raspbian Bullseye release (as well as RPi4B), omxplayer and the hardware decoding that work hand-in-hand are deprecated and/or unsupported. In order to use displaycameras, you should install raspbian buster (lite preferred). If you use an RPi4B, your source video codec must have hardware decode support in the RPi4B gpu.
 displaycameras *may* be rewritten around vlc, but challenges with vlc's DBUS support (for multiple vlc instances) may prevent the rewrite.
 # Project Description

@@ -1,4 +1,4 @@
-# This is the camera feed/windows layout configuration file for the
+﻿# This is the camera feed/windows layout configuration file for the
 # displaycameras service.  It ONLY configures the layout and feeds for
 # the cameras; the rest of the configuration is in displaycameras.conf.
 # See the comments in that file for notes on configuring the below.
