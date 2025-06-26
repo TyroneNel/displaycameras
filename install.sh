@@ -11,9 +11,47 @@ cleanup_file() {
     dos2unix "$dest" 2>/dev/null || true
 }
 
+# Function to install or update library files
+install_lib_files() {
+    local is_upgrade="$1"
+    
+    # Create lib directory if it doesn't exist
+    echo "Creating/verifying library directory structure..."
+    mkdir -p /usr/lib/displaycameras
+    
+    # Install/update library files
+    if [ -d "$DIR/lib" ]; then
+        echo "Installing/updating library files..."
+        # Backup existing files if this is an upgrade
+        if [ "$is_upgrade" = "true" ] && [ -d "/usr/lib/displaycameras" ]; then
+            echo "Backing up existing library files..."
+            mkdir -p /usr/lib/displaycameras/bak
+            cp -f /usr/lib/displaycameras/*.sh /usr/lib/displaycameras/bak/ 2>/dev/null || true
+        fi
+        
+        # Install new files
+        for lib_file in "$DIR"/lib/*.sh; do
+            if [ -r "$lib_file" ]; then
+                filename=$(basename "$lib_file")
+                echo "Installing $filename..."
+                cleanup_file "$lib_file" "/usr/lib/displaycameras/$filename"
+                chown root:root "/usr/lib/displaycameras/$filename"
+                chmod 0644 "/usr/lib/displaycameras/$filename"
+            else
+                echo "Warning: Unable to read library file $lib_file"
+            fi
+        done
+    else
+        echo "Error: Library directory missing. This is required for modular functionality."
+        echo "Verify package contents."
+        exit 1
+    fi
+}
+
 # Exit on error and undefined variables
 set -e
 set -u
+
 # Run as root to install the displaycameras package for streaming video feeds.
 # Systemd init system is presumed.  If installing on 'nix with other init
 # systems, you will have to edit this script or enable the displaycameras
@@ -26,25 +64,35 @@ set -u
 DIR=`dirname "$(readlink -f "$0")"`
 
 # Ensure prerequisites are installed.
-
-for package in omxplayer fbi logrotate netcat dos2unix
+for package in omxplayer fbi logrotate netcat dos2unix bc
 do
-if [ "`dpkg-query -s $package | grep Status | awk -v N=4 '{print $4}'`" != "installed" ]; then
-    apt-get install $package -y
-fi
+    if [ "`dpkg-query -s $package | grep Status | awk -v N=4 '{print $4}'`" != "installed" ]; then
+        apt-get install $package -y
+    fi
 done
 
 # Put the files in place and set ownership and permissions.
+
+# Handle library files for both install and upgrade
+if [ "${1:-}" = "upgrade" ]; then
+    install_lib_files "true"
+else
+    install_lib_files "false"
+fi
 
 if [ -r $DIR/displaycameras ]; then
     echo "Copying the main script and setting permissions."
     cleanup_file "$DIR/displaycameras" "/usr/bin/displaycameras"
     chown root:root /usr/bin/displaycameras && chmod 0755 /usr/bin/displaycameras
+    
+    # Update the main script to point to the correct lib directory
+    sed -i "s|source \"\$(dirname \"\$0\")/lib/|source \"/usr/lib/displaycameras/|g" "/usr/bin/displaycameras"
 else
     echo "The displaycameras file is missing or unreadable. This is a critical file."
     echo "Verify package contents."
-    exit 1
+    exit 2
 fi
+
 if [ -r $DIR/displaycameras.service ]; then
     echo "Copying the systemd init file and setting permissions."
     cleanup_file "$DIR/displaycameras.service" "/etc/systemd/system/displaycameras.service"
@@ -52,7 +100,7 @@ if [ -r $DIR/displaycameras.service ]; then
 else
     echo "The displaycameras.service file is missing or unreadable. This is a critical file."
     echo "Verify package contents."
-    exit 2
+    exit 3
 fi
 # Config files, cron job, gpu memory split, and disable overscan support only if not upgrading
 if [ "${1:-}" != "upgrade" ]; then
@@ -85,7 +133,7 @@ if [ "${1:-}" != "upgrade" ]; then
     else
         echo "The displaycameras.conf file is missing or unreadable. This is a critical file."
         echo "Verify package contents."
-        exit 3
+        exit 4
     fi
     if [ -r $DIR/repaircameras.cron ]; then
         echo "Copying the repaircameras cron job and reloading cron."
@@ -95,7 +143,7 @@ if [ "${1:-}" != "upgrade" ]; then
     else
         echo "The repaircameras.cron file is missing or unreadable. This is a critical file."
         echo "Verify package contents."
-        exit 4
+        exit 5
     fi
     # Setup logging configuration
     if [ -r $DIR/displaycameras.logrotate ]; then
@@ -173,7 +221,7 @@ if [ -r $DIR/omxplayer_dbuscontrol ]; then
 else
     echo "The omxplayer_dbuscontrl file is missing or unreadable. This is a critical file."
     echo "Verify package contents."
-    exit 5
+    exit 7
 fi
 if [ -r $DIR/rotatedisplays ]; then
     echo "Copying the display rotating script and setting permissions."
@@ -195,13 +243,19 @@ fi
 systemctl daemon-reload
 systemctl enable displaycameras
 
+# Restart the service if this is an upgrade
+if [ "${1:-}" = "upgrade" ]; then
+    echo "Restarting displaycameras service..."
+    systemctl restart displaycameras || true
+fi
+
 # Force an initial logrotate run if config exists (this should run for both install and upgrade)
 if [ -f /etc/logrotate.d/displaycameras ]; then
     echo "Running initial logrotate..."
     logrotate -f /etc/logrotate.d/displaycameras >/dev/null 2>&1 || true
 fi
 
-echo "Installation Successful!"
+echo "Installation/Upgrade Successful!"
 read -r -p "See the README.md? [Y/y/N/n] " REPLY
 if [ "$REPLY" = "Y" -o "$REPLY" = "y" ]; then
     echo "Use the space bar (or PgDn) to page down, PgUp to page up, q to quit"
