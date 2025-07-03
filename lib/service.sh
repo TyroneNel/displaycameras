@@ -66,7 +66,7 @@ repair_stream() {
         fi
         
         # Stop existing stream
-        omxplayer_dbuscontrol "${camera_names[$camera_idx]}" quit >/dev/null 2>&1
+        timeout 2s omxplayer_dbuscontrol "${camera_names[$camera_idx]}" quit >/dev/null 2>&1 || true
         sleep 2
         
         # Start new stream
@@ -98,8 +98,8 @@ check_stream_health() {
     local check=1
     
     while [ $check -le $max_checks ]; do
-        local status=$(omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
-        local position=$(omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
+        local status=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
+        local position=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
         
         if [ "$status" = "Playing" ] && [ "$position" != "0s" ]; then
             return 0

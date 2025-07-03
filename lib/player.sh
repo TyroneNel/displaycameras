@@ -47,8 +47,8 @@ control_player() {
         fi
         
         log "INFO" "Repositioning stream for $camera_name to $position"
-        debug "Executing reposition command: omxplayer_dbuscontrol \"$camera_name\" setvideopos $position"
-        omxplayer_dbuscontrol "$camera_name" setvideopos $position
+        debug "Executing reposition command: timeout 2s omxplayer_dbuscontrol \"$camera_name\" setvideopos $position"
+        timeout 2s omxplayer_dbuscontrol "$camera_name" setvideopos $position || true
     
     else
         log "ERROR" "Unknown action '$action' for control_player"

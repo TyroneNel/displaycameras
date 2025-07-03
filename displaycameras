@@ -314,8 +314,8 @@ status)
         echo "-------------"
         any_playing=false
         for name in "${camera_names[@]}"; do
-            status=$(omxplayer_dbuscontrol "$name" getplaystatus 2>/dev/null || echo "Not running")
-            position=$(omxplayer_dbuscontrol "$name" getposition 2>/dev/null || echo "0")
+            status=$(timeout 2s omxplayer_dbuscontrol "$name" getplaystatus 2>/dev/null || echo "Not running")
+            position=$(timeout 2s omxplayer_dbuscontrol "$name" getposition 2>/dev/null || echo "0")
             if [ "$status" = "Playing" ]; then
                 echo "$name: $status (Position: $position)"
                 any_playing=true
