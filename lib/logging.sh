@@ -9,7 +9,11 @@ log() {
 
 # Function to log debug messages
 debug() {
-    log "DEBUG" "$@"
+    if [ "${debug-}" = "true" ]; then
+        local script_name="${BASH_SOURCE[1]}"
+        local line_number="${BASH_LINENO[0]}"
+        log "DEBUG" "[$script_name:$line_number] $@"
+    fi
 }
 
 # Function to log info messages

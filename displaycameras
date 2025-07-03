@@ -17,6 +17,8 @@ set -u
 
 # Source all functions
 source "/usr/lib/displaycameras/functions.sh"
+source "/usr/lib/displaycameras/logging.sh"
+source "/usr/lib/displaycameras/player.sh"
 
 # Exit if not root
 if [[ $EUID -ne 0 ]]; then
@@ -38,14 +40,129 @@ else
    exit 1
 fi
 
+# Function to generate a new layout file based on the default
+generate_layout_file() {
+    local resolution="$1"
+    local default_layout="/etc/displaycameras/layout.conf.default"
+    local new_layout_file="/etc/displaycameras/layout.conf.$resolution"
+    
+    log "INFO" "Attempting to generate new layout file for $resolution..."
+
+    if [ ! -f "$default_layout" ]; then
+        log "ERROR" "Default layout file '$default_layout' not found. Cannot generate new layout."
+        return 1
+    fi
+
+    # Extract target dimensions
+    local target_w=$(echo "$resolution" | cut -d'x' -f1)
+    local target_h=$(echo "$resolution" | cut -d'x' -f2)
+
+    # Source the default layout in a subshell to access its variables safely
+    (
+        source "$default_layout"
+        
+        # Determine source dimensions from the default layout's positions
+        local max_x2=0
+        local max_y2=0
+        for pos in "${window_positions[@]}"; do
+            local x2=$(echo "$pos" | awk '{print $3}')
+            local y2=$(echo "$pos" | awk '{print $4}')
+            if [ "$x2" -gt "$max_x2" ]; then max_x2=$x2; fi
+            if [ "$y2" -gt "$max_y2" ]; then max_y2=$y2; fi
+        done
+        
+        local source_w=${max_x2:-1920}
+        local source_h=${max_y2:-1080}
+        
+        if [ "$source_w" -eq 0 ] || [ "$source_h" -eq 0 ]; then
+            log "WARN" "Could not determine source resolution from default layout. Assuming 1920x1080."
+            source_w=1920
+            source_h=1080
+        fi
+
+        # Calculate new window positions
+        local new_positions=()
+        for pos in "${window_positions[@]}"; do
+            local x1=$(echo "$pos" | awk '{print $1}')
+            local y1=$(echo "$pos" | awk '{print $2}')
+            local x2=$(echo "$pos" | awk '{print $3}')
+            local y2=$(echo "$pos" | awk '{print $4}')
+
+            local new_x1=$(printf "%.0f" $(echo "scale=4; $x1 * $target_w / $source_w" | bc))
+            local new_y1=$(printf "%.0f" $(echo "scale=4; $y1 * $target_h / $source_h" | bc))
+            local new_x2=$(printf "%.0f" $(echo "scale=4; $x2 * $target_w / $source_w" | bc))
+            local new_y2=$(printf "%.0f" $(echo "scale=4; $y2 * $target_h / $source_h" | bc))
+            
+            new_positions+=("$new_x1 $new_y1 $new_x2 $new_y2")
+        done
+
+        # Create the new layout file by replacing the window_positions block
+        local temp_file=$(mktemp)
+        local header_added=false
+        local in_block=false
+        
+        while IFS= read -r line; do
+            if [[ "$line" == "window_positions=("* ]]; then
+                # Print the auto-generation header and the new block
+                if ! $header_added; then
+                    echo -e "# Auto-generated layout for $resolution on $(date)\n# Based on $default_layout" >> "$temp_file"
+                    header_added=true
+                fi
+                echo -e "window_positions=(" >> "$temp_file"
+                for new_pos in "${new_positions[@]}"; do
+                    echo -e "    $new_pos" >> "$temp_file"
+                done
+                echo ")" >> "$temp_file"
+                in_block=true
+            elif $in_block && [[ "$line" == *")"* ]]; then
+                in_block=false # End of block, do nothing
+            elif ! $in_block; then
+                echo "$line" >> "$temp_file"
+            fi
+        done < "$default_layout"
+        
+        mv "$temp_file" "$new_layout_file"
+    )
+    
+    if [ $? -eq 0 ]; then
+        log "INFO" "Successfully generated new layout file: $new_layout_file"
+        chown root:root "$new_layout_file"
+        chmod 0644 "$new_layout_file"
+        return 0
+    else
+        log "ERROR" "Failed to generate new layout file."
+        rm -f "$new_layout_file" # Clean up failed attempt
+        return 1
+    fi
+}
+
 # Load layout configuration
-if [ -f /etc/displaycameras/layout.conf ]; then
-   source /etc/displaycameras/layout.conf
-elif [ -f /etc/displaycameras/layout.conf.default ]; then
-   source /etc/displaycameras/layout.conf.default
+if [ "${displaydetect-}" = "true" ] && command_exists fbset; then
+    resolution=$(fbset -s | awk '/geometry/ {print $2"x"$3}')
+    layout_file="/etc/displaycameras/layout.conf.$resolution"
+    if [ -f "$layout_file" ]; then
+        log "INFO" "Detected resolution $resolution, loading layout from $layout_file"
+        source "$layout_file"
+    else
+        if generate_layout_file "$resolution"; then
+            source "$layout_file"
+        elif [ -f "/etc/displaycameras/layout.conf.default" ]; then
+            log "WARN" "Layout generation failed. Falling back to default layout."
+            source "/etc/displaycameras/layout.conf.default"
+        else
+            log "ERROR" "Layout generation failed and no default layout is available."
+            exit 1
+        fi
+    fi
 else
-   log "ERROR" "/etc/displaycameras/layout.conf.default does not exist or is not readable."
-   exit 1
+    if [ -f /etc/displaycameras/layout.conf ]; then
+       source /etc/displaycameras/layout.conf
+    elif [ -f /etc/displaycameras/layout.conf.default ]; then
+       source /etc/displaycameras/layout.conf.default
+    else
+       log "ERROR" "/etc/displaycameras/layout.conf.default does not exist or is not readable."
+       exit 1
+    fi
 fi
 
 # Define PID files at the top with other variables

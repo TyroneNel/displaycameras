@@ -3,16 +3,8 @@
 # Function to start a camera stream
 start_stream() {
     local camera_idx="$1"
-    local camera_name="${camera_names[$camera_idx]}"
-    local camera_feed="${camera_feeds[$camera_idx]}"
-    
-    # Calculate window position based on current rotation sequence
-    local pos_idx=$(((camera_idx + DISPLAY_SEQUENCE) % ${#window_positions[@]}))
-    
-    local player_cmd="omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win \"${window_positions[$pos_idx]}\" \"$camera_feed\" --live -n -1 --timeout $omx_timeout --dbus_name \"org.mpris.MediaPlayer2.omxplayer.$camera_name\" >/dev/null 2>&1 &"
-    
-    log "INFO" "Starting stream for $camera_name"
-    eval $player_cmd
+    debug "start_stream called for camera_idx: $camera_idx"
+    control_player "start" "$camera_idx"
 }
 
 # Function to monitor and cleanup omxplayer processes

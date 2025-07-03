@@ -47,29 +47,34 @@ is_service_active() {
 stop_everything() {
     log_info "Stopping all related services and processes..."
 
-    if is_service_active displaycameras; then
-        log_info "Stopping displaycameras service..."
-        /bin/systemctl stop displaycameras || true
-    fi
-
-    if is_service_active cron; then
-        log_info "Stopping cron service..."
-        /bin/systemctl stop cron || true
-    fi
-
-    log_info "Searching for and terminating any lingering processes..."
-    /usr/bin/pkill -f "omxplayer" || true
-    #/usr/bin/pkill -f "displaycameras" || true
+    # Forcefully terminate all related processes first
+    log_info "Attempting to terminate all omxplayer and displaycameras processes..."
+    /usr/bin/pkill -9 -f "omxplayer" || true
+    /usr/bin/pkill -9 -f "/usr/bin/displaycameras" || true
     /bin/sleep 2
 
-    #if /usr/bin/pgrep -f "omxplayer" || /usr/bin/pgrep -f "displaycameras"; then
-	if /usr/bin/pgrep -f "omxplayer"; then
+    # Now, stop the service
+    if is_service_active displaycameras.service; then
+        log_info "Stopping displaycameras service..."
+        /bin/systemctl stop displaycameras.service
+        /bin/sleep 2
+    fi
+
+    # Final check to ensure all processes are gone
+    if /usr/bin/pgrep -f "omxplayer" || /usr/bin/pgrep -f "/usr/bin/displaycameras"; then
+        log_warn "Lingering processes detected. Retrying termination..."
+        /usr/bin/pkill -9 -f "omxplayer" || true
+        /usr/bin/pkill -9 -f "/usr/bin/displaycameras" || true
+        /bin/sleep 2
+    fi
+
+    if /usr/bin/pgrep -f "omxplayer" || /usr/bin/pgrep -f "/usr/bin/displaycameras"; then
         log_error "Failed to stop all related processes. A system reboot may be required."
     fi
 
     log_info "All related processes have been stopped."
 
-    log_info "Cleaning up old PID files..."
+    log_info "Cleaning up old PID and lock files..."
     /bin/rm -f /var/run/displaycameras*.pid /var/run/displaycameras*.lock /var/run/displaycameras*.sequence
 }
 
@@ -129,6 +134,9 @@ for lib_file in "$DIR"/lib/*.sh; do
         /bin/chmod 0644 "/usr/lib/displaycameras/$filename"
     fi
 done
+cleanup_file "$DIR/lib/player.sh" "/usr/lib/displaycameras/player.sh"
+/bin/chown root:root "/usr/lib/displaycameras/player.sh"
+/bin/chmod 0644 "/usr/lib/displaycameras/player.sh"
 
 log_info "Installing main executable scripts..."
 cleanup_file "$DIR/displaycameras" "/usr/bin/displaycameras"

@@ -43,9 +43,8 @@ rotate_displays() {
     # Immediately position streams on first run
     log "INFO" "Performing initial stream positioning"
     for i in ${!camera_names[*]}; do
-        local pos_idx=$(((i + DISPLAY_SEQUENCE) % ${#window_positions[@]}))
-        log "INFO" "Setting initial position for ${camera_names[$i]} to ${window_positions[$pos_idx]}"
-        eval omxplayer_dbuscontrol "${camera_names[$i]}" setvideopos "${window_positions[$pos_idx]}"
+        debug "Initial reposition for camera_idx: $i"
+        control_player "reposition" "$i"
         sleep 0.5 # Brief pause to allow DBus commands to process
     done
 
@@ -67,6 +66,7 @@ rotate_displays() {
         if [ "$DISPLAY_SEQUENCE" -ge "${#camera_names[@]}" ]; then
             DISPLAY_SEQUENCE=0
         fi
+        debug "New DISPLAY_SEQUENCE: $DISPLAY_SEQUENCE"
         
         # Check system resources before rotation
         if ! check_system_resources; then
@@ -76,14 +76,8 @@ rotate_displays() {
         
         # Rotate each stream
         for i in ${!camera_names[*]}; do
-            log "INFO" "Rotating stream ${camera_names[$i]}"
-            
-            # Calculate next position
-            local next_idx=$(((i + DISPLAY_SEQUENCE) % ${#window_positions[@]}))
-            
-            # Immediately change position
-            eval omxplayer_dbuscontrol "${camera_names[$i]}" setvideopos "${window_positions[$next_idx]}"
-            
+            debug "Rotation reposition for camera_idx: $i"
+            control_player "reposition" "$i"
             sleep 1
         done
         
