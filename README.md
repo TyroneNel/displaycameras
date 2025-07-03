@@ -1,137 +1,162 @@
-﻿# !!!Warning!!!
-As of Raspbian Bullseye release (as well as RPi4B), omxplayer and the hardware decoding that work hand-in-hand are deprecated and/or unsupported. In order to use displaycameras, you should install raspbian buster (lite preferred). If you use an RPi4B, your source video codec must have hardware decode support in the RPi4B gpu.
-displaycameras *may* be rewritten around vlc, but challenges with vlc's DBUS support (for multiple vlc instances) may prevent the rewrite.
-# Project Description
-displaycameras is a set of scripts run as a service on RaspberryPi hardware to locally display RTSP streams from Ubiquiti security camera systems.  It uses omxplayer to perform hardware accelerated playback of each configured feed in a grid of "windows" into which you divide your display.  It uses omxplayer's integration with DBUS to perform monitored startup, watchdog, and repair functions on feeds in order to maximize predictable, reliable performance.  It will optionally auto-detect screen resolution (and apply customized configuration) in case RPis don't have reliably consistent displays (e.g., mobile use).  It is capable of displaying more feeds than there are visible windows in your display grid by rendering some feeds off screen and rotating feeds through window positions (on and off screen) in order to visibly display all feeds over a reasonable period of time.
+# displaycameras - Raspberry Pi RTSP Camera Viewer
 
-## Donations
-If you feel compelled to contribute to the project, feel free to send funds to https://www.paypal.me/anonymousdog
+A set of scripts to display multiple RTSP camera streams on a Raspberry Pi using the hardware-accelerated `omxplayer`. It is designed to be a reliable, 24/7 monitoring solution that runs as a system service.
 
-# Pre-requisites
-* RaspberryPi hardware (for omxplayer)
-* systemd init system (because Raspbian Lite is the intended target OS)
-  * Raspian Lite is **STRONGLY** recommended.  Before filing bug reports, please ensure you can replicate the bug on Raspbian Lite.
-  * If installing on 'nix with other init systems, you will have to edit the install script or enable the displaycameras service with available tools for your init system.
-  * The main script, normally installed at /usr/bin/displaycameras has an LSB header and will run as a systemv init script (if copied to /etc/init.d/...maybe just symlink to the /usr/bin/ location [untested])?  No other init systems have been tested or are supported.
+---
 
-# Download/Install/Upgrade/Remove
-## Download the Archive
-### Latest Release (recommended)
-Go to https://github.com/Anonymousdog/displaycameras/releases/latest and download the Source Code (tar.gz) file
-### Latest Commits (only when directed)
-Download https://github.com/Anonymousdog/displaycameras/archive/master.tar.gz
+## ⚠️ Important Notice: `omxplayer` Deprecation
 
-## Unpack the Archive
-1. `tar -xvzf ./<source_code.tar.gz>`
-2. `cd ./<source_code directory>` to move to the directory where the archive unpacked
+As of the Debian Bullseye release, `omxplayer` and its associated hardware acceleration libraries are no longer included in the standard Raspberry Pi OS distribution.
 
-## Make the Installer Executable
-`chmod u+x ./install.sh`
+-   **Recommended OS:** For the simplest setup, use the **Raspbian Buster** (or older) Lite image.
+-   **Bullseye/Newer OS:** If you are using a newer OS, you **must** follow the manual installation steps below for `omxplayer` to function.
 
-## Installation
-1. `sudo ./install.sh`
-2. Accept the offer to view the README after successful installation and follow the instructions therein
+---
 
-## Upgrade
-`sudo ./install.sh upgrade`
+## 1. Manual `omxplayer` Installation (for Bullseye/Newer)
 
-No changes will be made to your existing config files, cron job setup, gpu memory allocation, or hdmi overscan setup.
+If you are not using Raspbian Buster, follow these steps before running the main installer.
 
-## Removal
-1. Stop the service: `sudo systemctl stop displaycameras.service`
-2. Disable the service: `sudo systemctl disable displaycameras.service`
-3. Remove the files:
-	a. Remove the config directory, `sudo rm -R /etc/displaycameras`
-	b. Remove the service file, `sudo rm /etc/systemd/system/displaycameras.service`
-	c. Remove the scripts, `sudo rm /usr/bin/omxplayer_dbuscontrol /usr/bin/black.png /usr/bin/rotatedisplays`
-	d. Remove the crontab file, `sudo rm /etc/cron.d/repaircameras && sudo systemctl restart cron`
-4. Remove the pre-requisites (optional): `for each package in omxplayer fbi; do sudo apt-get purge $package -y; done`
-5. Remove pre-requisites' dependencies (optional): `sudo apt-get autoremove -y`
+### Step 1: Install Legacy Firmware Libraries
 
-# CONFIGURATION
-Remember to edit the /etc/displaycameras/displaycameras.conf and /etc/displaycameras/layout.conf.default files for your environment.
+The required hardware acceleration libraries must be manually copied from an older firmware version.
 
-## Minimal Configuration
+1.  **Install `git`:**
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y git
+    ```
 
-### Global Options
-#### Main Conf File
-Global options like screen blanking, omxplayer network timeout, startsleep, feedsleep, retry, displaydetect, and rotatedelay in /etc/displaycameras/displaycameras.conf.
+2.  **Clone the `oldstable` firmware branch:**
+    ```bash
+    git clone --depth 1 --branch oldstable https://github.com/raspberrypi/firmware.git /tmp/firmware
+    ```
 
-All of these variables may be added to one or more layout configuration files to override the global options settings for one or more display layouts.
+3.  **Copy the required libraries to the system:**
+    ```bash
+    sudo cp /tmp/firmware/opt/vc/lib/libbrcmEGL.so /opt/vc/lib/
+    sudo cp /tmp/firmware/opt/vc/lib/libbrcmGLESv2.so /opt/vc/lib/
+    sudo cp /tmp/firmware/opt/vc/lib/libopenmaxil.so /opt/vc/lib/
+    sudo cp /tmp/firmware/opt/vc/lib/libvchostif.a /opt/vc/lib/
+    ```
 
-### Camera and Window Layout
-* Screen/window matrix setup, window names, camera names, and camera feeds should be here (and most definitely NOT in the main config file).
+### Step 2: Install `omxplayer` Package
 
-!!!WARNING!!!
+1.  **Download the `omxplayer` .deb package:**
+    ```bash
+    wget https://archive.raspberrypi.org/debian/pool/main/o/omxplayer/omxplayer_20190723+gitf543a0d-1+bullseye_armhf.deb -P /tmp
+    ```
 
-Camera Names must conform to DBUS namespace restrictions: valid UTF-8 only containing the ASCII characters "[A-Z][a-z][0-9]_" and must not begin with a digit or dot/period/"."
+2.  **Install the package:**
+    ```bash
+    sudo dpkg -i /tmp/omxplayer_20190723+gitf543a0d-1+bullseye_armhf.deb
+    ```
 
-!!!WARNING!!!
+3.  **Fix any broken dependencies:**
+    ```bash
+    sudo apt-get install -f -y
+    ```
 
-* Global options (exept for displaydetect) in the main conf file may be overridden (for specific displays) by supplying their values in these files.
-* Do NOT override 'displaydetect' settings in a layout config file; you will create problems.
-#### Layout Conf Files
-* All files in /etc/displaycameras/ which follow the naming convention 'layout.conf.<display resolution>' or the default layout conf file, layout.conf.default.
-* Unless you enable display detection in the main config file, the system will always use the default layout conf file.
-#### Default Layout Config File
-The default layout file now has rotation disabled by default; so, it's safe to throw your camera names and feeds in there and just use it if you want an onscreen 2x2 matrix on reliably 1080p displays.  If you have more than four cameras, you'll want to uncomment the last line.
+---
 
-## TESTING
-Test by starting the service manually, `sudo /usr/bin/displaycameras start`, to see the full output of the script.  In the main config file, /etc/displaycameras/displaycameras.conf, adjust feedsleep upward until you no longer see script output reflecting omxplayer playback (not startup) retries.
+## 2. `displaycameras` Installation
 
-Once that is resolved, adjust startsleep upward until you no longer see script output reflecting omxplayer startup or playback retries.  Increase retries if results are inconsistent but you want short startup or feed sleep values (for quicker startup).
+After ensuring the prerequisites are met (including the manual steps above if needed), you can install `displaycameras`.
 
-When you complete testing, clean up by stopping all test processes with `sudo /usr/bin/displaycameras stop`.
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/Anonymousdog/displaycameras.git
+    cd displaycameras
+    ```
 
-### Debugging
-#### Verify omxplayer will play your feed RTSP URLs
-To definitively rule out problems with omxplayer not playing your RTSP feeds, run the following in an SSH session:
-`sudo omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp <camera feed URL> --live -n -1 --timeout 30`
-	
-If your feed plays, there's a problem with your config for displaycameras.  If not, there's a problem with your URL or omxplayer won't play your feed.
-#### Verify valid feed RTSP URLs
-If that happens, you can verify the feed by trying to play it from VLC on the RPi or another device on the same network as the RPi.
+2.  **Make the installer executable:**
+    ```bash
+    chmod +x ./install.sh
+    ```
 
-If VLC plays it, you know the stream exists and that you have the correct URL.
+3.  **Run the installer:**
+    The script will install required packages like `fbi`, `logrotate`, and `dos2unix`.
+    ```bash
+    sudo ./install.sh
+    ```
 
-## Managing the Service
-The installer registers and activates the displaycameras service; so, it will start with the system (once networking and DBUS are running).
+---
 
-### Manual Service Management
-#### Start
-`sudo systemctl start displaycameras`
-#### Stop
-`sudo systemctl stop displaycameras`
-#### Restart
-`sudo systemctl restart displaycameras`
-#### Systemd Status Display
-`sudo systemctl status displaycameras`
-#### Debugging Status Information
-`sudo /usr/bin/displaycameras status` <-- this is not a call to systemd, just the script.
+## 3. Configuration
 
-## Advanced Configurations
-Perform all the steps in the minimal configuration and review the following options for tweaks to your setup.
-### Display Detection
-Enable display detection in displaycameras.conf and setup special layout configuration files for any display resolutions you want to support with auto-detection.  Use the 1440x900 or 1280x1028 (and other) files as examples, and duplicate the naming convention for these configuration file names, '/etc/displaycameras/layout.conf.<display resolution>' (e.g., /etc/displaycameras/layout.conf.1024x768). <--No, a 1024x768 layout config file is not included in this package.
+Configuration is split into two main files located in `/etc/displaycameras/`.
 
-#### Rotation
-If you want to display more cameras on screen than the screen will hold, ensure you have at least as many windows defined as cameras, and uncomment the 'rotate="true"' line in the main config file (for all displays) or in a custom layout file (for a specific screen resolution).
+### `displaycameras.conf`
+This file contains global settings like screen blanking (`blank="true"`) and stream rotation (`rotate="true"`).
 
-##### Rotation stepping (new - alpha feature)
-To rotate more aggressively than one feed at a time, set in the applicable layout.conf.* file "seq_step" to a integer between 1 and the number of cameras that fit on screen at any one time.
+### `layout.conf.default`
+This is where you define your cameras and the window layout.
 
-##### Screen "Flop" (new - alpha feature)
-If you want rotation to show you a full screen of feeds, then show you as many as possible that were off screen, and so on until it goes back to the original set (i.e., "flopping" between unique screen-fulls of feeds), set "seq_step" equal to the number of cameras that fit on screen at one time.
+1.  **Define Camera Names:** Create a unique name for each camera. Names must only contain `A-Z`, `a-z`, `0-9`, and `_`.
+    ```bash
+    camera_names=(
+        "FrontDoor"
+        "Driveway"
+    )
+    ```
 
-#### Display Blanking
-If your display shows background items from the terminal or GUI screen during rotation, you may want to enable screen "blanking" by uncommenting or adding a 'blank="true"' line in the main (for all displays) or custom layout files.
+2.  **Define Camera RTSP Feeds:** Add the corresponding RTSP URL for each camera.
+    ```bash
+    camera_feeds=(
+        "rtsp://192.168.1.10:7447/your_front_door_stream"
+        "rtsp://192.168.1.11:7447/your_driveway_stream"
+    )
+    ```
 
-#### Proper feed resolutions
-!!!WARNING!!!
+3.  **Define Window Positions:** Specify the screen coordinates for each window in the format `"x1 y1 x2 y2"`.
+    ```bash
+    window_positions=(
+        "0 0 960 540"      # Top-left
+        "960 0 1920 540"   # Top-right
+    )
+    ```
 
-Configure camera feeds that are the same resolution or SMALLER than your windows.  The RPi will struggle to downscale feeds to smaller windows.
+---
 
-#### Boot Config Changes
-You may want to adjust the gpu_mem value in /boot/config.txt if gpu resources restrict performance.
+## 4. Service Management
 
-Installation ensures there is a "disable_overscan=1" line in your /boot/config.txt file.  This disables overscan compensation which allows display resolutions autodetection to work properly.  We recommend you setup your monitor to disable overscan.  It is often enabled by default on televisions and some commercial displays.
+The installer registers `displaycameras` as a `systemd` service.
+
+-   **Start:** `sudo systemctl start displaycameras`
+-   **Stop:** `sudo systemctl stop displaycameras`
+-   **Restart:** `sudo systemctl restart displaycameras`
+-   **Check Status:** `sudo systemctl status displaycameras`
+-   **Enable on Boot:** `sudo systemctl enable displaycameras`
+-   **Disable on Boot:** `sudo systemctl disable displaycameras`
+
+For more detailed debugging, use the script's own status command:
+`sudo /usr/bin/displaycameras status`
+
+---
+
+## 5. Troubleshooting
+
+-   **Check the logs:** All output is logged to `/var/log/displaycameras.log`.
+-   **Test a stream URL directly:** Run this command to see if `omxplayer` can play your stream.
+    ```bash
+    omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp "YOUR_RTSP_URL_HERE" --live -n -1 --timeout 30
+    ```
+
+---
+
+## 6. Removal
+
+1.  **Stop and disable the service:**
+    ```bash
+    sudo systemctl stop displaycameras.service
+    sudo systemctl disable displaycameras.service
+    ```
+2.  **Remove all installed files:**
+    ```bash
+    sudo rm -R /etc/displaycameras
+    sudo rm /etc/systemd/system/displaycameras.service
+    sudo rm /usr/bin/omxplayer_dbuscontrol /usr/bin/black.png /usr/bin/rotatedisplays /usr/bin/displaycameras
+    sudo rm /etc/cron.d/repaircameras
+    sudo rm -R /usr/lib/displaycameras
+    sudo systemctl restart cron
+    ```

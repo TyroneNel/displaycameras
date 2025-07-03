@@ -20,13 +20,13 @@ source "/usr/lib/displaycameras/functions.sh"
 
 # Exit if not root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root"
+   log "ERROR" "This script must be run as root"
    exit 1
 fi
 
 # Exit if omxplayer_dbus is not executable and in the PATH
-if [ ! `which omxplayer_dbuscontrol` ]; then
-   echo "omxplayer_dbuscontrol not found in PATH or not executable"
+if ! command_exists omxplayer_dbuscontrol; then
+   log "ERROR" "omxplayer_dbuscontrol not found in PATH or not executable"
    exit 1
 fi
 
@@ -34,7 +34,7 @@ fi
 if [ -f /etc/displaycameras/displaycameras.conf ]; then
    source /etc/displaycameras/displaycameras.conf
 else
-   echo "/etc/displaycameras/displaycameras.conf does not exist or is not readable."
+   log "ERROR" "/etc/displaycameras/displaycameras.conf does not exist or is not readable."
    exit 1
 fi
 
@@ -44,7 +44,7 @@ if [ -f /etc/displaycameras/layout.conf ]; then
 elif [ -f /etc/displaycameras/layout.conf.default ]; then
    source /etc/displaycameras/layout.conf.default
 else
-   echo "/etc/displaycameras/layout.conf.default does not exist or is not readable."
+   log "ERROR" "/etc/displaycameras/layout.conf.default does not exist or is not readable."
    exit 1
 fi
 
@@ -55,7 +55,7 @@ MONITOR_PIDFILE="/var/run/displaycameras.monitor.pid"
 DISPLAY_SEQUENCE_FILE="/var/run/displaycameras.sequence"
 
 # Ensure there is an omxplayer timeout value
-if [ "$omx_timeout" = "" ]; then
+if [ -z "${omx_timeout-}" ]; then
    omx_timeout=30
 fi
 
@@ -73,9 +73,6 @@ window_positions=(
     "1200 720 1920 1080" # Position 4 (right bottom)
 )
 
-# Validate transition speed
-validate_transition_speed
-
 # How many cameras do we have?
 cameras="${#camera_names[@]}"
 # Set the max camera rotation sequence as one less than the number of cameras
@@ -90,32 +87,27 @@ fi
 
 case "$1" in
 start)
+    log "INFO" "Displaycameras service starting..."
     write_pid_file
     
     # Kill any existing omxplayer processes
+    log "INFO" "Terminating existing omxplayer processes..."
     pkill -f "omxplayer" || true
     sleep 1
     
-    if [ "$blank" = "true" ]; then
-        echo "Blanking screen"
-        if [ -f /usr/bin/fbi ]; then
-            fbi -T 2 --noverbose /usr/bin/black.png
+    if [ "${blank-}" = "true" ]; then
+        log "INFO" "Blanking screen"
+        if command_exists fbi; then
+            fbi -T 2 --noverbose /usr/bin/black.png >/dev/null 2>&1
         fi
     fi
     
     # Start all streams
-    startupfailure=false
     feedfailure=false
     
     for i in ${!camera_feeds[@]}; do
-        x=$((i+$DISPLAY_SEQUENCE))
-        if [ "$x" -ge "${#camera_names[@]}" ]; then x=$((x-${#camera_names[@]}))
-        fi
-        
-        player="omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win \"${window_positions[$x]}\" \"${camera_feeds[$i]}\" --live -n -1 --timeout $omx_timeout --dbus_name \"org.mpris.MediaPlayer2.omxplayer.${camera_names[$i]}\" >/dev/null 2>&1 &"
-        eval $player
-        
-        sleep $startsleep
+        start_stream "$i"
+        sleep "${startsleep-5}"
         
         # Check if stream started successfully
         if ! check_stream_health "${camera_names[$i]}"; then
@@ -124,7 +116,7 @@ start)
     done
     
     if [ "$feedfailure" = "true" ]; then
-        log "INFO" "Starting repair procedure"
+        log "INFO" "One or more feeds failed to start. Initiating repair procedure..."
         for i in ${!camera_feeds[@]}; do
             if ! check_stream_health "${camera_names[$i]}"; then
                 repair_stream "$i"
@@ -133,43 +125,54 @@ start)
     fi
     
     # Start rotation if configured
-    if [ "$rotate" = "true" ]; then
-        log "INFO" "Initializing camera rotation"
+    if [ "${rotate-}" = "true" ]; then
+        log "INFO" "Initializing camera rotation..."
         start_rotation
     fi
     
     # Start monitoring process
+    log "INFO" "Starting stream monitoring process..."
     monitor_omxplayer_processes &
     echo $! > "$MONITOR_PIDFILE"
+    log "INFO" "Monitoring process started with PID: $(cat $MONITOR_PIDFILE)"
+    log "INFO" "Displaycameras service started successfully."
     ;;
     
 stop)
+    log "INFO" "Displaycameras service stopping..."
     if [ -f "$PIDFILE" ]; then
         cleanup_pid_files
+        log "INFO" "Terminating omxplayer processes..."
         pkill -f "omxplayer" || true
-        if [ "$blank" = "true" ]; then
-            if [ -f /usr/bin/fbi ]; then
-                fbi -T 2 --noverbose /usr/bin/black.png
+        if [ "${blank-}" = "true" ]; then
+            if command_exists fbi; then
+                fbi -T 2 --noverbose /usr/bin/black.png >/dev/null 2>&1
             fi
         fi
     fi
+    log "INFO" "Displaycameras service stopped."
     ;;
     
 restart)
+    log "INFO" "Restarting displaycameras service..."
     $0 stop
     sleep 1
     $0 start
     ;;
     
 repair)
-    if [ ! -f "$PIDFILE" ]; then exit 0; fi
+    if [ ! -f "$PIDFILE" ]; then 
+        log "WARN" "Repair command issued, but service is not running."
+        exit 0
+    fi
     
-    log "INFO" "Starting repair procedure"
+    log "INFO" "Starting repair procedure..."
     for i in ${!camera_feeds[@]}; do
         if ! check_stream_health "${camera_names[$i]}"; then
             repair_stream "$i"
         fi
     done
+    log "INFO" "Repair procedure finished."
     ;;
     
 status)
@@ -225,10 +228,9 @@ status)
         echo "--------------"
         if check_rotation_status; then
             echo "Rotation: Active"
-            echo "Delay: $rotatedelay seconds"
-            echo "Transition Speed: $transitionspeed"
+            echo "Delay: ${rotatedelay-10} seconds"
         else
-            if [ "$rotate" = "true" ]; then
+            if [ "${rotate-}" = "true" ]; then
                 echo "Rotation: Configured but not running"
             else
                 echo "Rotation: Disabled"

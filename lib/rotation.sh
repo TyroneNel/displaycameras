@@ -1,29 +1,5 @@
 #!/bin/bash
 
-# Function to validate and normalize transition speed
-validate_transition_speed() {
-    # Default values
-    local min_speed=0.01
-    local max_speed=1.0
-    local default_speed=0.1
-    
-    # If transitionspeed is not set or invalid, use default
-    if [ -z "$transitionspeed" ] || ! [[ "$transitionspeed" =~ ^[0-9]*\.?[0-9]+$ ]]; then
-        log "WARN" "Invalid transition speed value, using default: $default_speed"
-        transitionspeed=$default_speed
-        return
-    fi
-    
-    # Ensure value is within bounds
-    if (( $(echo "$transitionspeed < $min_speed" | bc -l) )); then
-        log "WARN" "Transition speed too low, using minimum: $min_speed"
-        transitionspeed=$min_speed
-    elif (( $(echo "$transitionspeed > $max_speed" | bc -l) )); then
-        log "WARN" "Transition speed too high, using maximum: $max_speed"
-        transitionspeed=$max_speed
-    fi
-}
-
 # Function to check if rotation is active
 check_rotation_status() {
     # Check if rotation is enabled in config
@@ -64,6 +40,15 @@ start_rotation() {
 
 # Function to rotate displays
 rotate_displays() {
+    # Immediately position streams on first run
+    log "INFO" "Performing initial stream positioning"
+    for i in ${!camera_names[*]}; do
+        local pos_idx=$(((i + DISPLAY_SEQUENCE) % ${#window_positions[@]}))
+        log "INFO" "Setting initial position for ${camera_names[$i]} to ${window_positions[$pos_idx]}"
+        eval omxplayer_dbuscontrol "${camera_names[$i]}" setvideopos "${window_positions[$pos_idx]}"
+        sleep 0.5 # Brief pause to allow DBus commands to process
+    done
+
     while true; do
         # Check if main service is still running
         if [ ! -f "$PIDFILE" ]; then
@@ -89,30 +74,20 @@ rotate_displays() {
             sleep 2
         fi
         
-        # Clean up any stray NEXT_ streams first
-        pkill -f "org.mpris.MediaPlayer2.omxplayer.NEXT_" || true
-        sleep 1
-        
         # Rotate each stream
         for i in ${!camera_names[*]}; do
             log "INFO" "Rotating stream ${camera_names[$i]}"
             
             # Calculate next position
-            local next_idx=$(((i + 1) % ${#camera_names[@]}))
+            local next_idx=$(((i + DISPLAY_SEQUENCE) % ${#window_positions[@]}))
             
-            # Preload next stream
-            if preload_next_stream "$i"; then
-                # Perform smooth transition
-                smooth_transition "$i" "$next_idx"
-            else
-                log "ERROR" "Failed to preload next stream for ${camera_names[$i]}, using direct position change"
-                # Fallback to direct position change
-                eval omxplayer_dbuscontrol "${camera_names[$i]}" setvideopos \"${window_positions[$next_idx]}\"
-            fi
+            # Immediately change position
+            eval omxplayer_dbuscontrol "${camera_names[$i]}" setvideopos "${window_positions[$next_idx]}"
             
             sleep 1
         done
         
+        log "INFO" "Saving current display sequence: $DISPLAY_SEQUENCE"
         echo $DISPLAY_SEQUENCE > $DISPLAY_SEQUENCE_FILE
     done
 }

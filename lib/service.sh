@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Define lock file for repair process
+REPAIR_LOCKFILE="/var/run/displaycameras.repair.lock"
+
 # Function to check service status
 check_service_status() {
     if [ ! -f "$PIDFILE" ]; then
@@ -8,6 +16,8 @@ check_service_status() {
     
     local pid=$(cat "$PIDFILE")
     if ! kill -0 "$pid" 2>/dev/null; then
+        # PID file is stale, remove it
+        rm -f "$PIDFILE"
         return 1
     fi
     
@@ -16,17 +26,29 @@ check_service_status() {
 
 # Write PID file for systemd
 write_pid_file() {
-    echo $$ > "$PIDFILE"
+    log "INFO" "Creating PID file at $PIDFILE"
+    echo $ > "$PIDFILE"
 }
 
 # Clean up PID files
 cleanup_pid_files() {
-    rm -f "$PIDFILE" "$ROTATE_PIDFILE" "$MONITOR_PIDFILE" "$DISPLAY_SEQUENCE_FILE"
+    log "INFO" "Cleaning up PID files..."
+    rm -f "$PIDFILE" "$ROTATE_PIDFILE" "$MONITOR_PIDFILE" "$DISPLAY_SEQUENCE_FILE" "$REPAIR_LOCKFILE"
 }
 
 # Function to repair stream
 repair_stream() {
     local camera_idx="$1"
+    
+    # Check for lock file
+    if [ -f "$REPAIR_LOCKFILE" ]; then
+        log "INFO" "Repair process already running. Skipping."
+        return 1
+    fi
+    
+    # Create lock file
+    touch "$REPAIR_LOCKFILE"
+    
     local max_repair_attempts=5
     local attempt=1
     
@@ -48,20 +70,14 @@ repair_stream() {
         sleep 2
         
         # Start new stream
-        x=$((camera_idx+$DISPLAY_SEQUENCE))
-        if [ "$x" -ge "${#camera_names[@]}" ]; then 
-            x=$((x-${#camera_names[@]}))
-        fi
-        
-        player="omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win \"${window_positions[$x]}\" \"${camera_feeds[$camera_idx]}\" --live -n -1 --timeout $omx_timeout --dbus_name \"org.mpris.MediaPlayer2.omxplayer.${camera_names[$camera_idx]}\" >/dev/null 2>&1 &"
-        log "INFO" "Restarting stream for ${camera_names[$camera_idx]}"
-        eval $player
+        start_stream "$camera_idx"
         
         sleep $startsleep
         
         # Check if stream is healthy
         if check_stream_health "${camera_names[$camera_idx]}"; then
             log "INFO" "Successfully repaired stream for ${camera_names[$camera_idx]}"
+            rm -f "$REPAIR_LOCKFILE"
             return 0
         fi
         
@@ -71,6 +87,7 @@ repair_stream() {
     done
     
     log "ERROR" "Failed to repair stream for ${camera_names[$camera_idx]} after $max_repair_attempts attempts"
+    rm -f "$REPAIR_LOCKFILE"
     return 1
 }
 

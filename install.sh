@@ -1,265 +1,219 @@
 #!/bin/bash
 
-# Function to clean up files (remove BOM and ensure Unix line endings)
+# Installer for the displaycameras service
+# This script is designed to be robust, safe, and provide clear feedback.
+# It uses absolute paths for system commands to avoid PATH issues.
+
+# Exit on any error AND print each command before executing it
+set -e
+#set -x
+
+# --- Globals ---
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+INSTALL_MARKER="/etc/displaycameras/.install_marker"
+
+# --- Functions ---
+
+log_info() {
+    echo "[INFO] $1"
+}
+
+log_warn() {
+    echo "[WARN] $1"
+}
+
+log_error() {
+    echo "[ERROR] $1"
+    exit 1
+}
+
+check_network() {
+    log_info "Checking for network connectivity..."
+    if ! /bin/ping -c 1 -W 3 8.8.8.8 > /dev/null 2>&1; then
+        log_error "No network connection detected. Please connect to the internet and try again."
+    else
+        log_info "Network connection confirmed."
+    fi
+}
+
+command_exists() {
+    /usr/bin/command -v "$1" >/dev/null 2>&1
+}
+
+is_service_active() {
+    /bin/systemctl is-active --quiet "$1"
+}
+
+stop_everything() {
+    log_info "Stopping all related services and processes..."
+
+    if is_service_active displaycameras; then
+        log_info "Stopping displaycameras service..."
+        /bin/systemctl stop displaycameras || true
+    fi
+
+    if is_service_active cron; then
+        log_info "Stopping cron service..."
+        /bin/systemctl stop cron || true
+    fi
+
+    log_info "Searching for and terminating any lingering processes..."
+    /usr/bin/pkill -f "omxplayer" || true
+    #/usr/bin/pkill -f "displaycameras" || true
+    /bin/sleep 2
+
+    #if /usr/bin/pgrep -f "omxplayer" || /usr/bin/pgrep -f "displaycameras"; then
+	if /usr/bin/pgrep -f "omxplayer"; then
+        log_error "Failed to stop all related processes. A system reboot may be required."
+    fi
+
+    log_info "All related processes have been stopped."
+
+    log_info "Cleaning up old PID files..."
+    /bin/rm -f /var/run/displaycameras*.pid /var/run/displaycameras*.lock /var/run/displaycameras*.sequence
+}
+
 cleanup_file() {
     local src="$1"
     local dest="$2"
-    # Copy file first
-    cp -f "$src" "$dest"
-    # Remove BOM if exists and ensure Unix line endings
-    sed -i '1s/^\xEF\xBB\xBF//' "$dest"
-    dos2unix "$dest" 2>/dev/null || true
+    /bin/cp -f "$src" "$dest"
+    /bin/sed -i '1s/^\xEF\xBB\xBF//' "$dest"
+    /usr/bin/dos2unix "$dest" 2>/dev/null || true
 }
 
-# Function to install or update library files
-install_lib_files() {
-    local is_upgrade="$1"
-    
-    # Create lib directory if it doesn't exist
-    echo "Creating/verifying library directory structure..."
-    mkdir -p /usr/lib/displaycameras
-    
-    # Install/update library files
-    if [ -d "$DIR/lib" ]; then
-        echo "Installing/updating library files..."
-        # Backup existing files if this is an upgrade
-        if [ "$is_upgrade" = "true" ] && [ -d "/usr/lib/displaycameras" ]; then
-            echo "Backing up existing library files..."
-            mkdir -p /usr/lib/displaycameras/bak
-            cp -f /usr/lib/displaycameras/*.sh /usr/lib/displaycameras/bak/ 2>/dev/null || true
-        fi
-        
-        # Install new files
-        for lib_file in "$DIR"/lib/*.sh; do
-            if [ -r "$lib_file" ]; then
-                filename=$(basename "$lib_file")
-                echo "Installing $filename..."
-                cleanup_file "$lib_file" "/usr/lib/displaycameras/$filename"
-                chown root:root "/usr/lib/displaycameras/$filename"
-                chmod 0644 "/usr/lib/displaycameras/$filename"
-            else
-                echo "Warning: Unable to read library file $lib_file"
-            fi
-        done
-    else
-        echo "Error: Library directory missing. This is required for modular functionality."
-        echo "Verify package contents."
-        exit 1
+# --- Main Script ---
+
+log_info "Starting Displaycameras Installer..."
+
+if [[ $EUID -ne 0 ]]; then
+   log_error "This script must be run as root. Please use 'sudo'."
+fi
+
+if [ -f "$INSTALL_MARKER" ]; then
+    log_warn "An existing installation of displaycameras has been detected."
+    read -p "Do you want to proceed with overwriting the existing installation? [y/N] " -r
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Installation aborted by user."
+        exit 0
     fi
-}
+    stop_everything
+fi
 
-# Exit on error and undefined variables
-set -e
-set -u
+check_network
+log_info "Checking for and installing prerequisites..."
+log_info "Updating package lists with 'apt-get update'..."
+/usr/bin/apt-get update
 
-# Run as root to install the displaycameras package for streaming video feeds.
-# Systemd init system is presumed.  If installing on 'nix with other init
-# systems, you will have to edit this script or enable the displaycameras
-# service with available tools for your init system.  The main script,
-# normally installed at /usr/bin/displaycameras has an LSB header and will run
-# as a systemv init script (if copied to /etc/init.d/).  No other init systems
-# have been tested.
+for package in omxplayer fbi logrotate netcat-traditional dos2unix bc; do
+    if ! /usr/bin/dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "ok installed"; then
+        log_info "Installing $package..."
+        /usr/bin/apt-get install -y "$package"
+    else
+        log_info "$package is already installed."
+    fi
+done
+log_info "Prerequisite check complete."
 
-# What is the path to the installer?
-DIR=`dirname "$(readlink -f "$0")"`
+log_info "Starting file installation..."
 
-# Ensure prerequisites are installed.
-for package in omxplayer fbi logrotate netcat dos2unix bc
-do
-    if [ "`dpkg-query -s $package | grep Status | awk -v N=4 '{print $4}'`" != "installed" ]; then
-        apt-get install $package -y
+log_info "Creating directories..."
+/bin/mkdir -p /usr/lib/displaycameras
+/bin/mkdir -p /etc/displaycameras
+
+log_info "Installing library files..."
+for lib_file in "$DIR"/lib/*.sh; do
+    if [ -r "$lib_file" ]; then
+        filename=$(/usr/bin/basename "$lib_file")
+        cleanup_file "$lib_file" "/usr/lib/displaycameras/$filename"
+        /bin/chown root:root "/usr/lib/displaycameras/$filename"
+        /bin/chmod 0644 "/usr/lib/displaycameras/$filename"
     fi
 done
 
-# Put the files in place and set ownership and permissions.
+log_info "Installing main executable scripts..."
+cleanup_file "$DIR/displaycameras" "/usr/bin/displaycameras"
+/bin/chmod 0755 /usr/bin/displaycameras
+/bin/chown root:root /usr/bin/displaycameras
 
-# Handle library files for both install and upgrade
-if [ "${1:-}" = "upgrade" ]; then
-    install_lib_files "true"
-else
-    install_lib_files "false"
+cleanup_file "$DIR/omxplayer_dbuscontrol" "/usr/bin/omxplayer_dbuscontrol"
+/bin/chmod 0755 /usr/bin/omxplayer_dbuscontrol
+/bin/chown root:root /usr/bin/omxplayer_dbuscontrol
+
+log_info "Installing systemd service file..."
+cleanup_file "$DIR/displaycameras.service" "/etc/systemd/system/displaycameras.service"
+/bin/chmod 0644 /etc/systemd/system/displaycameras.service
+/bin/chown root:root /etc/systemd/system/displaycameras.service
+
+log_info "Installing configuration files..."
+if [ -d "/etc/displaycameras" ]; then
+    log_info "Backing up existing configuration to /etc/displaycameras/bak..."
+    /bin/mkdir -p /etc/displaycameras/bak
+    /bin/mv -f /etc/displaycameras/*.conf* /etc/displaycameras/bak/ 2>/dev/null || true
 fi
+cleanup_file "$DIR/displaycameras.conf" "/etc/displaycameras/displaycameras.conf"
+cleanup_file "$DIR/layout.conf.default" "/etc/displaycameras/layout.conf.default"
+cleanup_file "$DIR/layout.conf.1920x1080" "/etc/displaycameras/layout.conf.1920x1080"
+/bin/chown root:root /etc/displaycameras/*
+/bin/chmod 0644 /etc/displaycameras/*
 
-if [ -r $DIR/displaycameras ]; then
-    echo "Copying the main script and setting permissions."
-    cleanup_file "$DIR/displaycameras" "/usr/bin/displaycameras"
-    chown root:root /usr/bin/displaycameras && chmod 0755 /usr/bin/displaycameras
+log_info "Installing cron job and logrotate configuration..."
+cleanup_file "$DIR/repaircameras.cron" "/etc/cron.d/repaircameras"
+/bin/chmod 0644 /etc/cron.d/repaircameras
+/bin/chown root:root /etc/cron.d/repaircameras
+
+cleanup_file "$DIR/displaycameras.logrotate" "/etc/logrotate.d/displaycameras"
+/bin/chmod 0644 /etc/logrotate.d/displaycameras
+/bin/chown root:root /etc/logrotate.d/displaycameras
+
+log_info "Installing blank screen image..."
+/bin/cp -f "$DIR/black.png" "/usr/bin/black.png"
+/bin/chown root:root "/usr/bin/black.png"
+log_info "File installation complete."
+
+if [ -f /boot/config.txt ] && command_exists raspi-config; then
+    log_info "Configuring Raspberry Pi system settings..."
     
-    # Update the main script to point to the correct lib directory
-    sed -i "s|source \"\$(dirname \"\$0\")/lib/|source \"/usr/lib/displaycameras/|g" "/usr/bin/displaycameras"
-else
-    echo "The displaycameras file is missing or unreadable. This is a critical file."
-    echo "Verify package contents."
-    exit 2
-fi
-
-if [ -r $DIR/displaycameras.service ]; then
-    echo "Copying the systemd init file and setting permissions."
-    cleanup_file "$DIR/displaycameras.service" "/etc/systemd/system/displaycameras.service"
-    chown root:root /etc/systemd/system/displaycameras.service && chmod 0644 /etc/systemd/system/displaycameras.service
-else
-    echo "The displaycameras.service file is missing or unreadable. This is a critical file."
-    echo "Verify package contents."
-    exit 3
-fi
-# Config files, cron job, gpu memory split, and disable overscan support only if not upgrading
-if [ "${1:-}" != "upgrade" ]; then
-    if [ -r $DIR/displaycameras.conf ]; then
-        if [ -r /etc/displaycameras/displaycameras.conf ]; then
-            [ -d /etc/displaycameras/bak ] || mkdir /etc/displaycameras/bak
-            for i in `find /etc/displaycameras/ -maxdepth 1 -type f`; do
-                mv -f $i /etc/displaycameras/bak/
-            done
-            echo "Your config files were backed up to /etc/displaycameras/bak"
-        fi
-        echo "Copying the global and layout configuration files."
-        [ -d /etc/displaycameras ] || mkdir /etc/displaycameras
-        
-        # Copy and clean up each config file
-        cleanup_file "$DIR/layout.conf.default" "/etc/displaycameras/layout.conf.default"
-        cleanup_file "$DIR/displaycameras.conf" "/etc/displaycameras/displaycameras.conf"
-        
-        # Set permissions
-        chown root:root /etc/displaycameras/*.conf /etc/displaycameras/*.default
-        chmod 0644 /etc/displaycameras/*.conf /etc/displaycameras/*.default
-
-        # Copy 1920x1080 layout if it exists
-        if [ -r "$DIR/layout.conf.1920x1080" ]; then
-            cleanup_file "$DIR/layout.conf.1920x1080" "/etc/displaycameras/layout.conf.1920x1080"
-            chown root:root /etc/displaycameras/layout.conf.1920x1080
-            chmod 0644 /etc/displaycameras/layout.conf.1920x1080
-            echo "Copied and cleaned 1920x1080 layout configuration."
-        fi
+    current_gpu_mem=$(/bin/grep -E "^gpu_mem=" /boot/config.txt | /usr/bin/cut -d'=' -f2 || echo "0")
+    recommended_split=256
+    read -p "Enter desired GPU memory in MB [default: $recommended_split]: " -r
+    split=${REPLY:-$recommended_split}
+    if [ "$current_gpu_mem" -lt "$split" ]; then
+        log_info "Setting GPU memory to ${split}MB..."
+        raspi-config nonint do_gpu_mem "$split"
     else
-        echo "The displaycameras.conf file is missing or unreadable. This is a critical file."
-        echo "Verify package contents."
-        exit 4
-    fi
-    if [ -r $DIR/repaircameras.cron ]; then
-        echo "Copying the repaircameras cron job and reloading cron."
-        cleanup_file "$DIR/repaircameras.cron" "/etc/cron.d/repaircameras"
-        chown root:root /etc/cron.d/repaircameras && chmod 0755 /etc/cron.d/repaircameras
-        systemctl restart cron
-    else
-        echo "The repaircameras.cron file is missing or unreadable. This is a critical file."
-        echo "Verify package contents."
-        exit 5
-    fi
-    # Setup logging configuration
-    if [ -r $DIR/displaycameras.logrotate ]; then
-        echo "Setting up logging configuration..."
-        # Create log file with proper permissions if it doesn't exist
-        if [ ! -f /var/log/displaycameras.log ]; then
-            touch /var/log/displaycameras.log
-            chown root:root /var/log/displaycameras.log
-            chmod 644 /var/log/displaycameras.log
-            echo "Created log file: /var/log/displaycameras.log"
-        else
-            echo "Log file already exists, ensuring proper permissions..."
-            chown root:root /var/log/displaycameras.log
-            chmod 644 /var/log/displaycameras.log
-        fi
-
-        # Install logrotate configuration
-        cleanup_file "$DIR/displaycameras.logrotate" "/etc/logrotate.d/displaycameras"
-        chown root:root /etc/logrotate.d/displaycameras
-        chmod 644 /etc/logrotate.d/displaycameras
-        
-        # Validate logrotate config
-        if ! logrotate -d /etc/logrotate.d/displaycameras >/dev/null 2>&1; then
-            echo "Error: Invalid logrotate configuration"
-            exit 6
-        fi
-        
-        echo "Logging configuration completed successfully"
-    else
-        echo "The displaycameras.logrotate file is missing or unreadable."
-        echo "Logging rotation will not be configured."
-        echo "Verify package contents."
+        log_info "GPU memory is already sufficient ($current_gpu_mem MB)."
     fi
 
-    # Set a reasonable GPU memory allocation
-    # Determine total physical memory
-    # System Memory
-    sysmem="`free -m | grep Mem: | awk '$1=$1' | cut -f 2 -d " "`"
-    # GPU Memory
-    gpumem="`sudo raspi-config nonint get_config_var gpu_mem /boot/config.txt`"
-    # Total Mem
-    physmem=$((gpumem + sysmem))
-    if [ "$physmem" -lt "500" ]; then
-        split=96
-        else
-        if [ "$physmem" -lt "1000" ]; then
-            split=192
-            else
-            split=256
-        fi
-    fi
-    # Ask whether there's a custom split desired
-    echo -n "Enter a custom gpu split if desired [gpu memory in MB] or [Enter] to use recommended split: "
-    read -r REPLY
-    if [ "$REPLY" != "" ]; then
-        if [ "$REPLY" -ge "64" -a "$REPLY" -le "512" ]; then
-            split="$REPLY"
-        fi
-    fi
-    # Set the split
-    if [ "`raspi-config nonint get_config_var gpu_mem /boot/config.txt`" -lt "$split" ]; then
-        echo "Setting gpu_mem allocation to "$split"MB"
-        raspi-config nonint do_memory_split "$split"
-    fi
-    # Disable overscan support so that display resolution autodetection works
-    if [ "`raspi-config nonint get_overscan`" = "0" ]; then
-        echo "Disabling display overscan compensation. Set your monitor not to overscan."
+    if raspi-config nonint get_overscan | /bin/grep -q "enabled"; then
+        log_info "Disabling HDMI overscan..."
         raspi-config nonint do_overscan 1
+        log_warn "Overscan has been disabled. A reboot is required for this to take effect."
     fi
-fi
-if [ -r $DIR/omxplayer_dbuscontrol ]; then
-    echo "Copying the omxplayer control script."
-    cleanup_file "$DIR/omxplayer_dbuscontrol" "/usr/bin/omxplayer_dbuscontrol"
-    chown root:root /usr/bin/omxplayer_dbuscontrol && chmod 0755 /usr/bin/omxplayer_dbuscontrol
 else
-    echo "The omxplayer_dbuscontrl file is missing or unreadable. This is a critical file."
-    echo "Verify package contents."
-    exit 7
-fi
-if [ -r $DIR/rotatedisplays ]; then
-    echo "Copying the display rotating script and setting permissions."
-    cleanup_file "$DIR/rotatedisplays" "/usr/bin/rotatedisplays"
-    chown root:root /usr/bin/rotatedisplays && chmod 0755 /usr/bin/rotatedisplays
-else
-    echo "The rotatedisplays file is missing or unreadable. This file is required to support display rotation."
-    echo "Verify package contents."
-fi
-if [ -r $DIR/black.png ]; then
-    echo "Copying the black background file and setting ownership."
-    cp -f $DIR/black.png /usr/bin/ && chown root:root /usr/bin/black.png
-else
-    echo "The black.png file is missing or unreadable. Screen blanking will not work"
-    echo "with out it.  Verify package contents."
+    log_warn "Not a Raspberry Pi or raspi-config not found. Skipping GPU/Overscan configuration."
 fi
 
-# Update systemd and enable the displaycameras service.
-systemctl daemon-reload
-systemctl enable displaycameras
+log_info "Finalizing installation..."
 
-# Restart the service if this is an upgrade
-if [ "${1:-}" = "upgrade" ]; then
-    echo "Restarting displaycameras service..."
-    systemctl restart displaycameras || true
+log_info "Creating installation marker..."
+/bin/touch "$INSTALL_MARKER"
+
+log_info "Reloading systemd and enabling services..."
+/bin/systemctl daemon-reload
+/bin/systemctl enable displaycameras
+/bin/systemctl restart cron
+
+log_info "Installation/Upgrade Successful!"
+echo "-----------------------------------------------------"
+echo "You can now start the service with: sudo systemctl start displaycameras"
+echo "Check the status with: sudo systemctl status displaycameras"
+echo "Logs are located at: /var/log/displaycameras.log"
+echo "-----------------------------------------------------"
+
+read -p "A reboot is recommended to ensure all changes take effect. Reboot now? [y/N] " -r
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    log_info "Rebooting now..."
+    /sbin/reboot
 fi
 
-# Force an initial logrotate run if config exists (this should run for both install and upgrade)
-if [ -f /etc/logrotate.d/displaycameras ]; then
-    echo "Running initial logrotate..."
-    logrotate -f /etc/logrotate.d/displaycameras >/dev/null 2>&1 || true
-fi
-
-echo "Installation/Upgrade Successful!"
-read -r -p "See the README.md? [Y/y/N/n] " REPLY
-if [ "$REPLY" = "Y" -o "$REPLY" = "y" ]; then
-    echo "Use the space bar (or PgDn) to page down, PgUp to page up, q to quit"
-    read -r -p "Press Enter to begin." -n 1
-    less $DIR/README.md
-fi
 exit 0
