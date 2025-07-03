@@ -94,20 +94,33 @@ repair_stream() {
 # Stream health check function
 check_stream_health() {
     local camera_name="$1"
-    local max_checks=3
-    local check=1
     
-    while [ $check -le $max_checks ]; do
-        local status=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
-        local position=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
-        
-        if [ "$status" = "Playing" ] && [ "$position" != "0s" ]; then
-            return 0
-        fi
-        check=$((check + 1))
-        sleep 1
-    done
+    # First, check if the player is reporting a "Playing" status.
+    local status=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
+    if [ "$status" != "Playing" ]; then
+        log "WARN" "Stream health check for '$camera_name' failed: Status is '$status'."
+        return 1
+    fi
+
+    # Now, check for a frozen stream by comparing position over time.
+    local position1_str=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
     
-    log "ERROR" "Stream health check failed for camera $camera_name"
-    return 1
+    # The position is returned as "123s". We need to strip the 's' for comparison.
+    local position1=${position1_str%s} 
+
+    # Wait a moment to see if the stream progresses.
+    sleep 2 
+
+    local position2_str=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
+    local position2=${position2_str%s}
+
+    # If the position is greater than 0 and hasn't changed, the stream is frozen.
+    # The > 0 check avoids false positives right at the very start of a stream.
+    if [ "$position1" -gt 0 ] && [ "$position1" -eq "$position2" ]; then
+        log "ERROR" "Stream health check failed for '$camera_name': Stream appears to be frozen at position ${position1}s."
+        return 1
+    fi
+
+    debug "Stream health check passed for '$camera_name' (Position changed from ${position1}s to ${position2}s)."
+    return 0
 }

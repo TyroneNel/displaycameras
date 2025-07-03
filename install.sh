@@ -94,6 +94,15 @@ if [[ $EUID -ne 0 ]]; then
    log_error "This script must be run as root. Please use 'sudo'."
 fi
 
+# Check if this is a Raspberry Pi
+is_raspberry_pi() {
+    if [ -f /proc/device-tree/model ] && grep -q "Raspberry Pi" /proc/device-tree/model; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 if [ -f "$INSTALL_MARKER" ]; then
     log_warn "An existing installation of displaycameras has been detected."
     read -p "Do you want to proceed with overwriting the existing installation? [y/N] " -r
@@ -178,24 +187,36 @@ log_info "Installing blank screen image..."
 /bin/chown root:root "/usr/bin/black.png"
 log_info "File installation complete."
 
-if [ -f /boot/config.txt ] && command_exists raspi-config; then
+if is_raspberry_pi && command_exists /usr/bin/raspi-config; then
     log_info "Configuring Raspberry Pi system settings..."
     
-    current_gpu_mem=$(/bin/grep -E "^gpu_mem=" /boot/config.txt | /usr/bin/cut -d'=' -f2 || echo "0")
-    recommended_split=256
-    read -p "Enter desired GPU memory in MB [default: $recommended_split]: " -r
-    split=${REPLY:-$recommended_split}
-    if [ "$current_gpu_mem" -lt "$split" ]; then
-        log_info "Setting GPU memory to ${split}MB..."
-        raspi-config nonint do_gpu_mem "$split"
+    # Find the correct path for config.txt
+    if [ -f /boot/firmware/config.txt ]; then
+        config_path="/boot/firmware/config.txt"
+    elif [ -f /boot/config.txt ]; then
+        config_path="/boot/config.txt"
     else
-        log_info "GPU memory is already sufficient ($current_gpu_mem MB)."
+        log_warn "Could not find config.txt. Skipping GPU/Overscan configuration."
+        config_path=""
     fi
 
-    if raspi-config nonint get_overscan | /bin/grep -q "enabled"; then
-        log_info "Disabling HDMI overscan..."
-        raspi-config nonint do_overscan 1
-        log_warn "Overscan has been disabled. A reboot is required for this to take effect."
+    if [ -n "$config_path" ]; then
+        current_gpu_mem=$(/bin/grep -E "^gpu_mem=" "$config_path" | /usr/bin/cut -d'=' -f2 || echo "0")
+        recommended_split=256
+        read -p "Enter desired GPU memory in MB [default: $recommended_split]: " -r
+        split=${REPLY:-$recommended_split}
+        if [ "$current_gpu_mem" -lt "$split" ]; then
+            log_info "Setting GPU memory to ${split}MB..."
+            /usr/bin/raspi-config nonint do_gpu_mem "$split"
+        else
+            log_info "GPU memory is already sufficient ($current_gpu_mem MB)."
+        fi
+
+        if /usr/bin/raspi-config nonint get_overscan | /bin/grep -q "enabled"; then
+            log_info "Disabling HDMI overscan..."
+            /usr/bin/raspi-config nonint do_overscan 1
+            log_warn "Overscan has been disabled. A reboot is required for this to take effect."
+        fi
     fi
 else
     log_warn "Not a Raspberry Pi or raspi-config not found. Skipping GPU/Overscan configuration."
