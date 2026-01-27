@@ -57,7 +57,8 @@ generate_layout_file() {
     local target_w=$(echo "$resolution" | cut -d'x' -f1)
     local target_h=$(echo "$resolution" | cut -d'x' -f2)
 
-    # Source the default layout in a subshell to access its variables safely
+    # Track the subshell exit status
+    local result=0
     (
         source "$default_layout"
         
@@ -122,17 +123,17 @@ generate_layout_file() {
         done < "$default_layout"
         
         mv "$temp_file" "$new_layout_file"
-    )
+    ) || result=$?
     
-    if [ $? -eq 0 ]; then
+    if [ $result -ne 0 ]; then
+        log "ERROR" "Failed to generate new layout file."
+        rm -f "$new_layout_file" # Clean up failed attempt
+        return 1
+    else
         log "INFO" "Successfully generated new layout file: $new_layout_file"
         chown root:root "$new_layout_file"
         chmod 0644 "$new_layout_file"
         return 0
-    else
-        log "ERROR" "Failed to generate new layout file."
-        rm -f "$new_layout_file" # Clean up failed attempt
-        return 1
     fi
 }
 

@@ -8,6 +8,27 @@ command_exists() {
 # Define lock file for repair process
 REPAIR_LOCKFILE="/var/run/displaycameras.repair.lock"
 
+# Signal handler for graceful shutdown
+handle_signal() {
+    local signal="$1"
+    log "INFO" "Received $signal, initiating graceful shutdown..."
+    
+    # Clean up PID files
+    cleanup_pid_files
+    
+    # Kill all omxplayer processes
+    pkill -f "omxplayer" || true
+    
+    # Exit gracefully
+    log "INFO" "Shutdown complete"
+    exit 0
+}
+
+# Register signal handlers
+trap 'handle_signal "SIGTERM"' SIGTERM
+trap 'handle_signal "SIGINT"' SIGINT
+trap 'handle_signal "SIGHUP"' SIGHUP
+
 # Function to check service status
 check_service_status() {
     if [ ! -f "$PIDFILE" ]; then
@@ -27,7 +48,7 @@ check_service_status() {
 # Write PID file for systemd
 write_pid_file() {
     log "INFO" "Creating PID file at $PIDFILE"
-    echo $ > "$PIDFILE"
+    echo $$ > "$PIDFILE"
 }
 
 # Clean up PID files
@@ -124,3 +145,4 @@ check_stream_health() {
     debug "Stream health check passed for '$camera_name' (Position changed from ${position1}s to ${position2}s)."
     return 0
 }
+

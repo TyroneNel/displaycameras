@@ -33,9 +33,8 @@ control_player() {
     start)
         log "INFO" "Starting stream for $camera_name in position $position"
         local camera_feed="${camera_feeds[$camera_idx]}"
-        local player_cmd="omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win \"$position\" \"$camera_feed\" --live -n -1 --timeout $omx_timeout --dbus_name \"org.mpris.MediaPlayer2.omxplayer.$camera_name\" >/dev/null 2>&1 &"
-        debug "Executing player command: $player_cmd"
-        eval $player_cmd
+        debug "Starting omxplayer for $camera_name with feed: $camera_feed"
+        omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win "$position" "$camera_feed" --live -n -1 --timeout "$omx_timeout" --dbus_name "org.mpris.MediaPlayer2.omxplayer.$camera_name" >/dev/null 2>&1 &
         ;;
     reposition)
         log "INFO" "Repositioning stream for $camera_name to $position"

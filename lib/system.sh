@@ -5,8 +5,19 @@ check_system_resources() {
     local cpu_threshold=90
     local mem_threshold=90
     
-    # Get CPU usage (average over last minute)
-    local cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d. -f1)
+    # Get CPU usage from /proc/stat (more reliable than top)
+    local cpu_line=$(head -n 1 /proc/stat)
+    local user=$(echo "$cpu_line" | awk '{print $2}')
+    local nice=$(echo "$cpu_line" | awk '{print $3}')
+    local system=$(echo "$cpu_line" | awk '{print $4}')
+    local idle=$(echo "$cpu_line" | awk '{print $5}')
+    local iowait=$(echo "$cpu_line" | awk '{print $6}')
+    local irq=$(echo "$cpu_line" | awk '{print $7}')
+    local softirq=$(echo "$cpu_line" | awk '{print $8}')
+    
+    local total=$((user + nice + system + idle + iowait + irq + softirq))
+    local active=$((total - idle))
+    local cpu_usage=$((active * 100 / total))
     
     # Get memory usage percentage
     local mem_total=$(free | grep Mem: | awk '{print $2}')

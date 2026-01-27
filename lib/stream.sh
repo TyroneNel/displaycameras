@@ -9,6 +9,9 @@ start_stream() {
 
 # Function to monitor and cleanup omxplayer processes
 monitor_omxplayer_processes() {
+    # Set up signal handling
+    trap 'log "INFO" "Monitor loop received shutdown signal"; exit 0' SIGTERM SIGINT
+    
     # Set a default for monitorinterval if it's not defined.
     : ${monitorinterval:=10}
     while true; do

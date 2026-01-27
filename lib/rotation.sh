@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Configurable sleep delays (in seconds)
+: ${rotation_sleep:=1}          # Sleep between camera repositioning during rotation
+: ${dbus_pause:=0.5}            # Brief pause to allow DBus commands to process
+
 # Function to check if rotation is active
 check_rotation_status() {
     # Check if rotation is enabled in config
@@ -40,12 +44,15 @@ start_rotation() {
 
 # Function to rotate displays
 rotate_displays() {
+    # Set up signal handling
+    trap 'log "INFO" "Rotation loop received shutdown signal"; rm -f "$ROTATE_PIDFILE"; exit 0' SIGTERM SIGINT
+    
     # Immediately position streams on first run
     log "INFO" "Performing initial stream positioning"
     for i in ${!camera_names[*]}; do
         debug "Initial reposition for camera_idx: $i"
         control_player "reposition" "$i"
-        sleep 0.5 # Brief pause to allow DBus commands to process
+        sleep "$dbus_pause" # Brief pause to allow DBus commands to process
     done
 
     while true; do
@@ -78,7 +85,7 @@ rotate_displays() {
         for i in ${!camera_names[*]}; do
             debug "Rotation reposition for camera_idx: $i"
             control_player "reposition" "$i"
-            sleep 1
+            sleep "$rotation_sleep"
         done
         
         log "INFO" "Saving current display sequence: $DISPLAY_SEQUENCE"

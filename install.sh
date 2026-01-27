@@ -12,6 +12,26 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 INSTALL_MARKER="/etc/displaycameras/.install_marker"
 
+# Parse command line arguments
+NON_INTERACTIVE=false
+SKIP_REBOOT=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -y|--non-interactive)
+            NON_INTERACTIVE=true
+            shift
+            ;;
+        --skip-reboot)
+            SKIP_REBOOT=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
 # --- Functions ---
 
 log_info() {
@@ -104,11 +124,15 @@ is_raspberry_pi() {
 }
 
 if [ -f "$INSTALL_MARKER" ]; then
-    log_warn "An existing installation of displaycameras has been detected."
-    read -p "Do you want to proceed with overwriting the existing installation? [y/N] " -r
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Installation aborted by user."
-        exit 0
+    if [ "$NON_INTERACTIVE" = "true" ]; then
+        log_info "Existing installation detected. Proceeding with overwrite due to --non-interactive flag."
+    else
+        log_warn "An existing installation of displaycameras has been detected."
+        read -p "Do you want to proceed with overwriting the existing installation? [y/N] " -r
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Installation aborted by user."
+            exit 0
+        fi
     fi
     stop_everything
 fi
@@ -203,8 +227,12 @@ if is_raspberry_pi && command_exists /usr/bin/raspi-config; then
     if [ -n "$config_path" ]; then
         current_gpu_mem=$(/bin/grep -E "^gpu_mem=" "$config_path" | /usr/bin/cut -d'=' -f2 || echo "0")
         recommended_split=256
-        read -p "Enter desired GPU memory in MB [default: $recommended_split]: " -r
-        split=${REPLY:-$recommended_split}
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            split=$recommended_split
+        else
+            read -p "Enter desired GPU memory in MB [default: $recommended_split]: " -r
+            split=${REPLY:-$recommended_split}
+        fi
         if [ "$current_gpu_mem" -lt "$split" ]; then
             log_info "Setting GPU memory to ${split}MB..."
             /usr/bin/raspi-config nonint do_gpu_mem "$split"
@@ -239,10 +267,17 @@ echo "Check the status with: sudo systemctl status displaycameras"
 echo "Logs are located at: /var/log/displaycameras.log"
 echo "-----------------------------------------------------"
 
-read -p "A reboot is recommended to ensure all changes take effect. Reboot now? [y/N] " -r
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+if [ "$SKIP_REBOOT" = "true" ]; then
+    log_info "Skipping reboot as requested."
+elif [ "$NON_INTERACTIVE" = "true" ]; then
     log_info "Rebooting now..."
     /sbin/reboot
+else
+    read -p "A reboot is recommended to ensure all changes take effect. Reboot now? [y/N] " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Rebooting now..."
+        /sbin/reboot
+    fi
 fi
 
 exit 0
