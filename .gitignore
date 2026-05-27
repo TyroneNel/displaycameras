@@ -1,0 +1,31 @@
+# displaycameras project gitignore
+
+# --- OS / Editor Artifacts ---
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# --- Environment / Config ---
+.env
+.env.local
+
+# --- Build / Temp / Cache ---
+*.tmp
+*.temp
+*.cache
+tmp/
+
+# --- Logs ---
+*.log
+
+# --- Node / Python artifacts (if ever added) ---
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Project-specific ---
+kilo.json
