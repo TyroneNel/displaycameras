@@ -206,11 +206,25 @@ fi
 case "$1" in
 start)
     log "INFO" "Displaycameras service starting..."
+    
+    # Prevent duplicate start: if PID file exists and process is alive, bail out.
+    if [ -f "$PIDFILE" ]; then
+        local existing_pid
+        existing_pid=$(cat "$PIDFILE")
+        if kill -0 "$existing_pid" 2>/dev/null; then
+            log "INFO" "Displaycameras is already running (PID $existing_pid). Skipping start."
+            exit 0
+        else
+            log "WARN" "Stale PID file found. Removing and continuing start."
+            rm -f "$PIDFILE"
+        fi
+    fi
+    
     write_pid_file
     
     # Kill any existing omxplayer processes
     log "INFO" "Terminating existing omxplayer processes..."
-    pkill -f "omxplayer" || true
+    timeout 10 pkill -f "omxplayer" 2>/dev/null || true
     sleep 1
     
     if [ "${blank-}" = "true" ]; then
@@ -254,6 +268,9 @@ start)
     echo $! > "$MONITOR_PIDFILE"
     log "INFO" "Monitoring process started with PID: $(cat $MONITOR_PIDFILE)"
     log "INFO" "Displaycameras service started successfully."
+    # Wait for background jobs so the PID file stays alive and
+    # the signal handler can catch SIGTERM for graceful shutdown.
+    wait
     ;;
     
 stop)
@@ -261,10 +278,10 @@ stop)
     if [ -f "$PIDFILE" ]; then
         cleanup_pid_files
         log "INFO" "Terminating omxplayer processes..."
-        pkill -f "omxplayer" 2>/dev/null || true
+        timeout 10 pkill -f "omxplayer" 2>/dev/null || true
         sleep 1
         # Ensure dbus-daemon cleanup
-        pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+        timeout 5 pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
         cleanup_dbus_files
         if [ "${blank-}" = "true" ]; then
             if command_exists fbi; then

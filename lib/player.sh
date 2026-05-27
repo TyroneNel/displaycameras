@@ -30,7 +30,7 @@ stop_stream() {
     fi
     
     # After a successful stop, kill any stale dbus-daemon and clean files
-    pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+    timeout 5 pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
     local dbus_addr="/tmp/omxplayerdbus.${USER:-root}"
     rm -f "$dbus_addr"* 2>/dev/null || true
 }

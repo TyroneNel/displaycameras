@@ -17,10 +17,10 @@ handle_signal() {
     cleanup_pid_files
     
     log "INFO" "Terminating omxplayer processes..."
-    pkill -f "omxplayer" 2>/dev/null || true
+    timeout 10 pkill -f "omxplayer" 2>/dev/null || true
     sleep 1
     # Ensure dbus-daemon cleanup
-    pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+    timeout 5 pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
     cleanup_dbus_files
     
     # Exit gracefully
@@ -40,8 +40,12 @@ trap 'handle_signal "SIGHUP"' SIGHUP
 
 # Kill a stream process with graduated signals (SIGINT -> SIGTERM -> SIGKILL)
 # Also cleans up associated dbus-daemon
+# NOTE: kill -9 can block indefinitely on omxplayer.bin when it is in GPU DMA
+#       lock state (process in SLl).  Every kill attempt is wrapped in timeout
+#       so the caller never waits more than 9 s total per PID.
 kill_stream_process() {
     local camera_name="$1"
+    local -i KILL_TIMEOUT=3
     
     # Find the shell wrapper PID(s) (omxplayer is a bash wrapper script)
     local wrapper_pid
@@ -49,20 +53,26 @@ kill_stream_process() {
         if [ -z "$wrapper_pid" ]; then
             continue
         fi
-        # Try SIGINT first (2s timeout)
-        kill -2 "$wrapper_pid" 2>/dev/null || true
+        # Try SIGINT first
+        timeout "$KILL_TIMEOUT" kill -2 "$wrapper_pid" 2>/dev/null || true
         sleep 2
         
         # Check if still alive
         if kill -0 "$wrapper_pid" 2>/dev/null; then
             # Try SIGTERM
-            kill -15 "$wrapper_pid" 2>/dev/null || true
+            timeout "$KILL_TIMEOUT" kill -15 "$wrapper_pid" 2>/dev/null || true
             sleep 1
         fi
         
         # Final SIGKILL
         if kill -0 "$wrapper_pid" 2>/dev/null; then
-            kill -9 "$wrapper_pid" 2>/dev/null || true
+            timeout "$KILL_TIMEOUT" kill -9 "$wrapper_pid" 2>/dev/null || true
+            
+            # If still alive after SIGKILL (likely stuck in GPU DMA),
+            # log and move on – orphan cleanup will catch it later.
+            if kill -0 "$wrapper_pid" 2>/dev/null; then
+                log "WARN" "PID $wrapper_pid ($camera_name) survived SIGKILL (probably GPU DMA lock); leaving for orphan cleanup"
+            fi
         fi
     done < <(pgrep -f "omxplayer.*$camera_name" 2>/dev/null)
     
