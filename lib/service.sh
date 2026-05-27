@@ -78,9 +78,8 @@ kill_stream_process() {
         fi
     done < <(pgrep -f "omxplayer.*$camera_name" 2>/dev/null)
     
-    # Kill any orphaned dbus-daemon that might be associated
-    # The dbus-daemon reads from /tmp/omxplayerdbus.root
-    pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+    # DBus daemon is shared across all cameras; must NOT be killed here.
+    # Full service shutdown (handle_signal/stop command) handles DBus cleanup.
 }
 
 # Function to check service status
@@ -161,7 +160,6 @@ repair_stream() {
         # Stop existing stream - use graduated kill
         kill_stream_process "${camera_names[$camera_idx]}"
         sleep 1
-        cleanup_dbus_files
         
         # Start new stream
         start_stream "$camera_idx"

@@ -31,10 +31,10 @@ stop_stream() {
         log_event "stream.stop.force" "camera" "$camera_name"
     fi
     
-    # After a successful stop, kill any stale dbus-daemon and clean files
-    timeout 5 pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
-    local dbus_addr="/tmp/omxplayerdbus.${USER:-root}"
-    rm -f "$dbus_addr"* 2>/dev/null || true
+    # DBus daemon and socket files are shared across all cameras via a
+    # single per-user session bus. They must NOT be killed/cleaned here
+    # (that would break all other cameras). They are cleaned during full
+    # service shutdown by handle_signal() and the stop command.
 }
 
 # Centralized function to control all omxplayer instances
