@@ -2,9 +2,6 @@
 Documentation=man:systemd-sysv-generator(8)
 Description=Displays camera feeds for monitoring
 Before=multi-user.target
-Before=multi-user.target
-Before=multi-user.target
-Before=graphical.target
 After=network-online.target
 After=dbus.service
 After=cron.service
