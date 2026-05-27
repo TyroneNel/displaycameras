@@ -210,7 +210,6 @@ start)
     
     # Prevent duplicate start: if PID file exists and process is alive, bail out.
     if [ -f "$PIDFILE" ]; then
-        local existing_pid
         existing_pid=$(cat "$PIDFILE")
         if kill -0 "$existing_pid" 2>/dev/null; then
             info "Displaycameras is already running (PID $existing_pid). Skipping start."
