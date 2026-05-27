@@ -266,7 +266,7 @@ start)
     # Start monitoring process
     info "Starting stream monitoring process..."
     monitor_omxplayer_processes &
-    echo $! > "$MONITOR_PIDFILE"
+    echo $! > "${MONITOR_PIDFILE}.tmp" && mv "${MONITOR_PIDFILE}.tmp" "$MONITOR_PIDFILE"
     info "Monitoring process started with PID: $(cat $MONITOR_PIDFILE)"
     info "Displaycameras service started successfully."
     # Wait for background jobs so the PID file stays alive and

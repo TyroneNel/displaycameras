@@ -98,10 +98,10 @@ check_service_status() {
     return 0
 }
 
-# Write PID file for systemd
+# Write PID file for systemd (atomic via temp file + rename)
 write_pid_file() {
     info "Creating PID file at $PIDFILE"
-    echo $$ > "$PIDFILE"
+    echo $$ > "${PIDFILE}.tmp" && mv "${PIDFILE}.tmp" "$PIDFILE"
 }
 
 # Clean up PID files

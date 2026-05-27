@@ -38,7 +38,7 @@ start_rotation() {
     
     # Start rotation in background
     rotate_displays &
-    echo $! > "$ROTATE_PIDFILE"
+    echo $! > "${ROTATE_PIDFILE}.tmp" && mv "${ROTATE_PIDFILE}.tmp" "$ROTATE_PIDFILE"
     info "Started rotation process (PID: $(cat $ROTATE_PIDFILE))"
 }
 
