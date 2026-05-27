@@ -63,6 +63,11 @@ control_player() {
 
     case "$action" in
     start)
+        if [ "${camera_offscreen_state[$camera_name]}" = "true" ]; then
+            # Camera was off-screen and is now being started on-screen.
+            log "INFO" "Restarting off-screen stream for $camera_name on-screen"
+            camera_offscreen_state[$camera_name]="false"
+        fi
         log "INFO" "Starting stream for $camera_name in position $position"
         local camera_feed="${camera_feeds[$camera_idx]}"
         debug "Starting omxplayer for $camera_name with feed: $camera_feed"

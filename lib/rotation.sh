@@ -88,6 +88,20 @@ rotate_displays() {
             sleep "$rotation_sleep"
         done
         
+        # Restart off-screen cameras that are now on-screen
+        local num_windows=${#window_positions[@]}
+        for i in ${!camera_names[*]}; do
+            local display_rank=$(((i - DISPLAY_SEQUENCE + ${#camera_names[@]}) % ${#camera_names[@]}))
+            local camera_name="${camera_names[$i]}"
+            if [ "$display_rank" -lt "$num_windows" ]; then
+                if [ "${camera_offscreen_state[$camera_name]}" = "true" ]; then
+                    log "INFO" "Camera $camera_name moved on-screen, restarting stream"
+                    control_player "start" "$i"
+                    sleep "$rotation_sleep"
+                fi
+            fi
+        done
+        
         log "INFO" "Saving current display sequence: $DISPLAY_SEQUENCE"
         echo $DISPLAY_SEQUENCE > $DISPLAY_SEQUENCE_FILE
     done
