@@ -84,10 +84,15 @@ control_player() {
             camera_offscreen_state[$camera_name]="false"
         fi
         info "Starting stream for $camera_name in position $position"
-        log_stream_action "stream.start" "$camera_name" "position" "$position" "window" "$display_rank"
         local camera_feed="${camera_feeds[$camera_idx]}"
-        debug "Starting omxplayer for $camera_name with feed: $camera_feed"
-        omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win "$position" "$camera_feed" --live -n -1 --timeout "$omx_timeout" --dbus_name "org.mpris.MediaPlayer2.omxplayer.$camera_name" >/dev/null 2>&1 &
+        local effective_timeout="$omx_timeout"
+        if [ "$display_rank" -eq 0 ]; then
+            effective_timeout="${camera_timeouts[$camera_idx]:-$omx_timeout}"
+            debug "Camera $camera_name on main window: using per-camera timeout ${effective_timeout}s"
+        fi
+        log_stream_action "stream.start" "$camera_name" "position" "$position" "window" "$display_rank" "timeout" "$effective_timeout"
+        debug "Starting omxplayer for $camera_name with feed: $camera_feed timeout: $effective_timeout"
+        omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win "$position" "$camera_feed" --live -n -1 --timeout "$effective_timeout" --dbus_name "org.mpris.MediaPlayer2.omxplayer.$camera_name" >/dev/null 2>&1 &
         ;;
     reposition)
         if [ "$display_rank" -ge "$num_windows" ]; then
