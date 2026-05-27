@@ -115,7 +115,7 @@ generate_layout_file() {
                 done
                 echo ")" >> "$temp_file"
                 in_block=true
-            elif $in_block && [[ "$line" == *")"* ]]; then
+            elif $in_block && [[ "$line" =~ ^[[:space:]]*\)[[:space:]]*$ ]]; then
                 in_block=false # End of block, do nothing
             elif ! $in_block; then
                 echo "$line" >> "$temp_file"
