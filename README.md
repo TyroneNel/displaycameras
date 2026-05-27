@@ -155,7 +155,7 @@ For more detailed debugging, use the script's own status command:
     ```bash
     sudo rm -R /etc/displaycameras
     sudo rm /etc/systemd/system/displaycameras.service
-    sudo rm /usr/bin/omxplayer_dbuscontrol /usr/bin/black.png /usr/bin/rotatedisplays /usr/bin/displaycameras
+    sudo rm /usr/bin/omxplayer_dbuscontrol /usr/bin/black.png /usr/bin/displaycameras
     sudo rm /etc/cron.d/repaircameras
     sudo rm -R /usr/lib/displaycameras
     sudo systemctl restart cron

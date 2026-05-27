@@ -14,8 +14,6 @@ The `displaycameras` application is a robust system designed for continuous, mul
 
 -   **`omxplayer_dbuscontrol`**: A critical utility script that acts as a bridge to control `omxplayer` instances. Since `omxplayer` runs in the background, this script uses the DBus messaging system to send commands to specific player instances (e.g., `play`, `pause`, `quit`, `setvideopos`). It is customized to target the uniquely named DBus addresses that the `displaycameras` script assigns to each stream, allowing for individual control.
 
--   **`rotatedisplays`**: A standalone script that provides an alternative, simpler rotation mechanism. It runs in a loop, sleeping for a specified time and then calling the main `displaycameras` script with the `rotate` or `rotaterev` command. It appears to be a legacy or alternative method for rotation, as the primary rotation logic is now built into the main service via the `rotate_displays` function.
-
 -   **`install.sh`**: The installation script responsible for setting up the application, placing files in their correct locations (`/usr/bin`, `/usr/lib/displaycameras`, `/etc/displaycameras`), and installing the systemd service.
 
 ### Configuration Files

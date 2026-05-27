@@ -9,15 +9,15 @@
 # Description:
 ### END INIT INFO
 
-# Exit on error and undefined variables
+# Exit on error, undefined variables, and pipe failures
 set -e
 set -u
+set -o pipefail
 
 # version:0.8.3
 
 # Source all functions
 source "/usr/lib/displaycameras/functions.sh"
-source "/usr/lib/displaycameras/logging.sh"
 source "/usr/lib/displaycameras/player.sh"
 
 # Exit if not root
@@ -189,14 +189,6 @@ fi
 declare -i DISPLAY_SEQUENCE
 DISPLAY_SEQUENCE=$(cat "$DISPLAY_SEQUENCE_FILE")
 
-# Define window positions (x1 y1 x2 y2)
-window_positions=(
-    "0 0 1200 1080"      # Position 1 (left full)
-    "1200 0 1920 360"    # Position 2 (right top)
-    "1200 360 1920 720"  # Position 3 (right middle)
-    "1200 720 1920 1080" # Position 4 (right bottom)
-)
-
 # How many cameras do we have?
 cameras="${#camera_names[@]}"
 # Set the max camera rotation sequence as one less than the number of cameras
@@ -331,7 +323,7 @@ status)
         mem_total=$(free -m | awk '/^Mem:/{print $2}')
         mem_used=$(free -m | awk '/^Mem:/{print $3}')
         mem_percent=$((mem_used * 100 / mem_total))
-        cpu_load=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d. -f1)
+        cpu_load=$(awk 'NR==1 {u=$2+$3+$4+$6+$7+$8; t=u+$5; if(t>0) printf "%.0f", u*100/t; else print "0"; exit}' /proc/stat)
         
         echo "System Resources:"
         echo "----------------"

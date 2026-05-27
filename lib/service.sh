@@ -122,7 +122,8 @@ repair_stream() {
         return 1
     fi
     
-    # Early exit if no omxplayer processes are running
+    # Early exit if no omxplayer processes are running AND service is also stopped.
+    # If the service PID exists but streams are dead, proceed with repair.
     local omxplayer_running=false
     for name in "${camera_names[@]}"; do
         if pgrep -f "omxplayer.bin.*$name" >/dev/null 2>&1; then
@@ -132,10 +133,13 @@ repair_stream() {
     done
 
     if [ "$omxplayer_running" = "false" ]; then
-        local repair_camera_name="${camera_names[$1]}"
-        info "No omxplayer processes running for $repair_camera_name. Skipping repair."
-        rmdir "$REPAIR_LOCKDIR" 2>/dev/null || true
-        return 0
+        if [ ! -f "$PIDFILE" ]; then
+            local repair_camera_name="${camera_names[$1]}"
+            info "No omxplayer processes running and service is stopped. Skipping repair."
+            rmdir "$REPAIR_LOCKDIR" 2>/dev/null || true
+            return 0
+        fi
+        info "No omxplayer processes running but service is active; will attempt restart."
     fi
     
     local max_repair_attempts=5
@@ -189,22 +193,20 @@ check_stream_health() {
     local camera_name="$1"
     
     # First, check if the player is reporting a "Playing" status.
-    local status=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
+    local status=$(timeout 1s omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
     if [ "$status" != "Playing" ]; then
         warn "Stream health check for '$camera_name' failed: Status is '$status'."
         return 1
     fi
 
     # Now, check for a frozen stream by comparing position over time.
-    local position1_str=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
-    
-    # The position is returned as "123s". We need to strip the 's' for comparison.
-    local position1=${position1_str%s} 
+    local position1_str=$(timeout 1s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
 
-    # Wait a moment to see if the stream progresses.
-    sleep 2 
+    local position1=${position1_str%s}
 
-    local position2_str=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
+    sleep 2
+
+    local position2_str=$(timeout 1s omxplayer_dbuscontrol "$camera_name" getposition 2>/dev/null || echo "0s")
     local position2=${position2_str%s}
 
     # If the position is greater than 0 and hasn't changed, the stream is frozen.

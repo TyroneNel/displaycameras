@@ -3,4 +3,4 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-* * * * * root /usr/bin/displaycameras repair
+* * * * * root /usr/bin/displaycameras repair >/dev/null 2>&1
