@@ -16,10 +16,22 @@ fi
 
 OMXPLAYER_DBUS_ADDR="/tmp/omxplayerdbus.${USER:-root}"
 OMXPLAYER_DBUS_PID="/tmp/omxplayerdbus.${USER:-root}.pid"
-export DBUS_SESSION_BUS_ADDRESS=`cat $OMXPLAYER_DBUS_ADDR`
-export DBUS_SESSION_BUS_PID=`cat $OMXPLAYER_DBUS_PID`
+
+[ -f "$OMXPLAYER_DBUS_ADDR" ] || { echo "DBus address file not found: $OMXPLAYER_DBUS_ADDR" >&2; exit 1; }
+[ -f "$OMXPLAYER_DBUS_PID" ]  || { echo "DBus PID file not found: $OMXPLAYER_DBUS_PID" >&2; exit 1; }
+
+export DBUS_SESSION_BUS_ADDRESS=$(cat "$OMXPLAYER_DBUS_ADDR")
+export DBUS_SESSION_BUS_PID=$(cat "$OMXPLAYER_DBUS_PID")
 
 [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && { echo "Must have DBUS_SESSION_BUS_ADDRESS" >&2; exit 1; }
+
+# Verify the dbus-daemon is still alive (stale files from a prior session
+# would cause all DBus calls to fail silently)
+if ! kill -0 "$DBUS_SESSION_BUS_PID" 2>/dev/null; then
+    echo "DBus session bus (PID $DBUS_SESSION_BUS_PID) is not running; cleaning up stale files" >&2
+    rm -f "$OMXPLAYER_DBUS_ADDR" "$OMXPLAYER_DBUS_PID" 2>/dev/null || true
+    exit 1
+fi
 
 case $2 in
 getplaystatus)
