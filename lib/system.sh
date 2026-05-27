@@ -25,7 +25,7 @@ check_system_resources() {
     local mem_usage=$((mem_used * 100 / mem_total))
     
     # Log resource usage
-    info "System resources - CPU: $cpu_usage%, Memory: $mem_usage%"
+    debug "System resources - CPU: $cpu_usage%, Memory: $mem_usage%"
     
     # Check against thresholds
     if [ "$cpu_usage" -ge "$cpu_threshold" ] || [ "$mem_usage" -ge "$mem_threshold" ]; then

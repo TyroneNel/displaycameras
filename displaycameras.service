@@ -8,6 +8,11 @@ After=cron.service
 Wants=network-online.target
 
 [Service]
+# Type=oneshot with RemainAfterExit=yes keeps the service marked active after
+# ExecStart completes. The start command blocks on 'wait' so it stays alive
+# as long as the background rotation/monitor loops run. Systemd cannot detect
+# if those background processes crash -- they are monitored internally via
+# PID files and the cron-based repair job.
 Type=oneshot
 Restart=no
 TimeoutSec=5min

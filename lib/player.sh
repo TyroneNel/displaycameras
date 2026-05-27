@@ -102,7 +102,7 @@ control_player() {
         info "Repositioning stream for $camera_name to $position"
         log_stream_action "stream.reposition" "$camera_name" "position" "$position" "window" "$display_rank"
         debug "Executing reposition command: timeout 2s omxplayer_dbuscontrol \"$camera_name\" setvideopos $position"
-        timeout 2s omxplayer_dbuscontrol "$camera_name" setvideopos $position || true
+        timeout 2s omxplayer_dbuscontrol "$camera_name" setvideopos $position || warn "DBus reposition failed for $camera_name"
         ;;
     *)
         error "Unknown action '$action' for control_player"

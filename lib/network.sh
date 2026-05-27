@@ -36,12 +36,12 @@ check_network_connectivity() {
 measure_network_latency() {
     local url="$1"
     local host=$(echo "$url" | awk -F[/:] '{print $4}')
-    local samples=3
+    local samples=1
     local total_latency=0
     local successful_pings=0
     
     for ((i=1; i<=samples; i++)); do
-        local latency=$(ping -c 1 -W 2 "$host" 2>/dev/null | \
+        local latency=$(ping -c 1 -W 1 "$host" 2>/dev/null | \
             grep "time=" | \
             awk -F"time=" '{print $2}' | \
             cut -d' ' -f1 | \
