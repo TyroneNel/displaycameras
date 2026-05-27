@@ -261,7 +261,11 @@ stop)
     if [ -f "$PIDFILE" ]; then
         cleanup_pid_files
         log "INFO" "Terminating omxplayer processes..."
-        pkill -f "omxplayer" || true
+        pkill -f "omxplayer" 2>/dev/null || true
+        sleep 1
+        # Ensure dbus-daemon cleanup
+        pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+        cleanup_dbus_files
         if [ "${blank-}" = "true" ]; then
             if command_exists fbi; then
                 fbi -T 2 --noverbose /usr/bin/black.png >/dev/null 2>&1
