@@ -7,6 +7,22 @@ start_stream() {
     control_player "start" "$camera_idx"
 }
 
+# Clean up zombie/defunct omxplayer wrapper processes
+# (wrappers that have no omxplayer.bin child)
+cleanup_orphan_processes() {
+    for name in "${camera_names[@]}"; do
+        # Find shell wrappers that have no omxplayer.bin child
+        pgrep -f "omxplayer.*$name" 2>/dev/null | while read -r wrapper_pid; do
+            local child_count
+            child_count=$(pgrep -P "$wrapper_pid" 2>/dev/null | wc -l)
+            if [ "$child_count" -eq 0 ]; then
+                log "WARN" "Cleaning up defunct wrapper process $wrapper_pid for $name"
+                kill -9 "$wrapper_pid" 2>/dev/null || true
+            fi
+        done
+    done
+}
+
 # Function to monitor and cleanup omxplayer processes
 monitor_omxplayer_processes() {
     # Set up signal handling
@@ -20,6 +36,9 @@ monitor_omxplayer_processes() {
             log "INFO" "Main service stopped, ending monitoring"
             exit 0
         fi
+
+        # Detect and clean zombie/defunct wrapper processes
+        cleanup_orphan_processes
 
         for i in ${!camera_names[@]}; do
             if ! check_stream_health "${camera_names[$i]}"; then

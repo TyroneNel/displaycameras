@@ -16,18 +16,58 @@ handle_signal() {
     # Clean up PID files
     cleanup_pid_files
     
-    # Kill all omxplayer processes
-    pkill -f "omxplayer" || true
+    log "INFO" "Terminating omxplayer processes..."
+    pkill -f "omxplayer" 2>/dev/null || true
+    sleep 1
+    # Ensure dbus-daemon cleanup
+    pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+    cleanup_dbus_files
     
     # Exit gracefully
     log "INFO" "Shutdown complete"
     exit 0
 }
 
+# Clean up stale DBus address files
+cleanup_dbus_files() {
+    rm -f /tmp/omxplayerdbus.root* /tmp/omxplayerdbus.pi* 2>/dev/null || true
+}
+
 # Register signal handlers
 trap 'handle_signal "SIGTERM"' SIGTERM
 trap 'handle_signal "SIGINT"' SIGINT
 trap 'handle_signal "SIGHUP"' SIGHUP
+
+# Kill a stream process with graduated signals (SIGINT -> SIGTERM -> SIGKILL)
+# Also cleans up associated dbus-daemon
+kill_stream_process() {
+    local camera_name="$1"
+    
+    # Find the shell wrapper PID (omxplayer is a bash wrapper script)
+    local wrapper_pid=$(pgrep -f "omxplayer.*$camera_name" 2>/dev/null || true)
+    
+    if [ -n "$wrapper_pid" ]; then
+        # Try SIGINT first (2s timeout)
+        kill -2 "$wrapper_pid" 2>/dev/null || true
+        sleep 2
+        
+        # Check if still alive
+        if kill -0 "$wrapper_pid" 2>/dev/null; then
+            # Try SIGTERM
+            kill -15 "$wrapper_pid" 2>/dev/null || true
+            sleep 1
+        fi
+        
+        # Final SIGKILL
+        if kill -0 "$wrapper_pid" 2>/dev/null; then
+            kill -9 "$wrapper_pid" 2>/dev/null || true
+        fi
+    fi
+    
+    # Kill any orphaned dbus-daemon that might be associated
+    # The dbus-daemon reads from /tmp/omxplayerdbus.root
+    pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+}
 
 # Function to check service status
 check_service_status() {
@@ -70,6 +110,21 @@ repair_stream() {
     # Create lock file
     touch "$REPAIR_LOCKFILE"
     
+    # Early exit if no omxplayer processes are running
+    local omxplayer_running=false
+    for name in "${camera_names[@]}"; do
+        if pgrep -f "omxplayer.bin.*$name" >/dev/null 2>&1; then
+            omxplayer_running=true
+            break
+        fi
+    done
+
+    if [ "$omxplayer_running" = "false" ]; then
+        log "INFO" "No omxplayer processes running. Skipping repair."
+        rm -f "$REPAIR_LOCKFILE" 2>/dev/null || true
+        return 0
+    fi
+    
     local max_repair_attempts=5
     local attempt=1
     
@@ -79,16 +134,17 @@ repair_stream() {
         log "INFO" "Repair attempt $attempt for ${camera_names[$camera_idx]}"
         
         # Check network connectivity first
-        if ! check_network_connectivity "${camera_feeds[$camera_idx]}"; then
+        if ! check_network_connectivity "${camera_feeds[$camera_idx]}" ; then
             log "ERROR" "Network connectivity check failed for ${camera_names[$camera_idx]}"
             sleep 5
             attempt=$((attempt + 1))
             continue
         fi
         
-        # Stop existing stream
-        timeout 2s omxplayer_dbuscontrol "${camera_names[$camera_idx]}" quit >/dev/null 2>&1 || true
-        sleep 2
+        # Stop existing stream - use graduated kill
+        kill_stream_process "${camera_names[$camera_idx]}"
+        sleep 1
+        cleanup_dbus_files
         
         # Start new stream
         start_stream "$camera_idx"

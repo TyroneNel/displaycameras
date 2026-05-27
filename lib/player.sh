@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# Array to track off-screen state for each camera
+declare -A camera_offscreen_state
+
+# Stop a stream entirely (for off-screen rotation)
+stop_stream() {
+    local camera_idx="$1"
+    local camera_name="${camera_names[$camera_idx]}"
+    
+    log "INFO" "Stopping stream for $camera_name (off-screen)"
+    timeout 2s omxplayer_dbuscontrol "$camera_name" quit 2>/dev/null || true
+    sleep 1
+}
+
 # Centralized function to control all omxplayer instances
 # ACTION: "start" or "reposition"
 # CAMERA_IDX: The index of the camera in the camera_names array
@@ -23,6 +36,8 @@ control_player() {
         # This camera should be on-screen. Its window is at index 'display_rank'.
         position="${window_positions[$display_rank]}"
         debug "Camera '$camera_name' (idx $camera_idx) is ON-SCREEN in window $display_rank at position '$position'"
+        # Reset off-screen state when camera should be on-screen
+        camera_offscreen_state[$camera_name]="false"
     else
         # This camera should be off-screen.
         position="-10000 -10000 -9000 -9000"
@@ -37,6 +52,15 @@ control_player() {
         omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win "$position" "$camera_feed" --live -n -1 --timeout "$omx_timeout" --dbus_name "org.mpris.MediaPlayer2.omxplayer.$camera_name" >/dev/null 2>&1 &
         ;;
     reposition)
+        if [ "$display_rank" -ge "$num_windows" ]; then
+            # Moving off-screen: stop the stream instead of repositioning
+            if [ "${camera_offscreen_state[$camera_name]}" != "true" ]; then
+                stop_stream "$camera_idx"
+                camera_offscreen_state[$camera_name]="true"
+            fi
+            return
+        fi
+        
         log "INFO" "Repositioning stream for $camera_name to $position"
         debug "Executing reposition command: timeout 2s omxplayer_dbuscontrol \"$camera_name\" setvideopos $position"
         timeout 2s omxplayer_dbuscontrol "$camera_name" setvideopos $position || true
