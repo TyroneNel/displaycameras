@@ -1,4 +1,4 @@
-﻿[Unit]
+[Unit]
 Documentation=man:systemd-sysv-generator(8)
 Description=Displays camera feeds for monitoring
 Before=multi-user.target
