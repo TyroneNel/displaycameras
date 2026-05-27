@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Based on dbus.sh from the https://github.com/anselanza/omx-layers project
 #set -x
