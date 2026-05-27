@@ -43,10 +43,12 @@ trap 'handle_signal "SIGHUP"' SIGHUP
 kill_stream_process() {
     local camera_name="$1"
     
-    # Find the shell wrapper PID (omxplayer is a bash wrapper script)
-    local wrapper_pid=$(pgrep -f "omxplayer.*$camera_name" 2>/dev/null || true)
-    
-    if [ -n "$wrapper_pid" ]; then
+    # Find the shell wrapper PID(s) (omxplayer is a bash wrapper script)
+    local wrapper_pid
+    while IFS= read -r wrapper_pid; do
+        if [ -z "$wrapper_pid" ]; then
+            continue
+        fi
         # Try SIGINT first (2s timeout)
         kill -2 "$wrapper_pid" 2>/dev/null || true
         sleep 2
@@ -62,7 +64,7 @@ kill_stream_process() {
         if kill -0 "$wrapper_pid" 2>/dev/null; then
             kill -9 "$wrapper_pid" 2>/dev/null || true
         fi
-    fi
+    done < <(pgrep -f "omxplayer.*$camera_name" 2>/dev/null)
     
     # Kill any orphaned dbus-daemon that might be associated
     # The dbus-daemon reads from /tmp/omxplayerdbus.root
@@ -120,7 +122,8 @@ repair_stream() {
     done
 
     if [ "$omxplayer_running" = "false" ]; then
-        log "INFO" "No omxplayer processes running. Skipping repair."
+        local repair_camera_name="${camera_names[$1]}"
+        log "INFO" "No omxplayer processes running for $repair_camera_name. Skipping repair."
         rm -f "$REPAIR_LOCKFILE" 2>/dev/null || true
         return 0
     fi

@@ -13,6 +13,15 @@ cleanup_orphan_processes() {
     for name in "${camera_names[@]}"; do
         # Find shell wrappers that have no omxplayer.bin child
         pgrep -f "omxplayer.*$name" 2>/dev/null | while read -r wrapper_pid; do
+            [ -n "$wrapper_pid" ] || continue
+            # Verify this is the wrapper script, not the binary
+            local cmdline
+            cmdline=$(cat /proc/$wrapper_pid/cmdline 2>/dev/null | tr '\0' ' ')
+            case "$cmdline" in
+                *omxplayer.bin*)
+                    continue
+                    ;;
+            esac
             local child_count
             child_count=$(pgrep -P "$wrapper_pid" 2>/dev/null | wc -l)
             if [ "$child_count" -eq 0 ]; then

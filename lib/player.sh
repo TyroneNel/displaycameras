@@ -9,8 +9,25 @@ stop_stream() {
     local camera_name="${camera_names[$camera_idx]}"
     
     log "INFO" "Stopping stream for $camera_name (off-screen)"
+    
+    # Prefer DBus quit for clean shutdown, but don't fail if DBus is already gone.
+    # This covers both graceful stop and force-kill fallback via kill_stream_process().
     timeout 2s omxplayer_dbuscontrol "$camera_name" quit 2>/dev/null || true
-    sleep 1
+    
+    local -i waited=0
+    while (( waited < 5 )); do
+        if ! pgrep -f "omxplayer.bin.*$camera_name" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        ((waited++))
+    done
+    
+    # If still alive, force clean-up.
+    if pgrep -f "omxplayer.bin.*$camera_name" >/dev/null 2>&1; then
+        log "WARN" "$camera_name did not stop cleanly, forcing cleanup"
+        kill_stream_process "$camera_name"
+    fi
 }
 
 # Centralized function to control all omxplayer instances
