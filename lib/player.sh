@@ -28,6 +28,11 @@ stop_stream() {
         log "WARN" "$camera_name did not stop cleanly, forcing cleanup"
         kill_stream_process "$camera_name"
     fi
+    
+    # After a successful stop, kill any stale dbus-daemon and clean files
+    pkill -f "dbus-daemon.*omxplayer" 2>/dev/null || true
+    local dbus_addr="/tmp/omxplayerdbus.${USER:-root}"
+    rm -f "$dbus_addr"* 2>/dev/null || true
 }
 
 # Centralized function to control all omxplayer instances
@@ -63,6 +68,13 @@ control_player() {
 
     case "$action" in
     start)
+        # If an existing omxplayer.bin is still running for this camera, kill it first.
+        # This prevents duplicate/overlapping streams that can happen when a camera
+        # was stopped off-screen and is now being restarted on-screen.
+        if pgrep -f "omxplayer\.bin.*$camera_name" >/dev/null 2>&1; then
+            log "WARN" "Old omxplayer for $camera_name is still running, stopping before restart"
+            kill_stream_process "$camera_name"
+        fi
         if [ "${camera_offscreen_state[$camera_name]}" = "true" ]; then
             # Camera was off-screen and is now being started on-screen.
             log "INFO" "Restarting off-screen stream for $camera_name on-screen"
