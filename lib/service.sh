@@ -5,8 +5,8 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Define lock file for repair process
-REPAIR_LOCKFILE="/var/run/displaycameras.repair.lock"
+# Define lock directory for repair process (mkdir is atomic on POSIX filesystems)
+REPAIR_LOCKDIR="/var/run/displaycameras.repair.lock"
 
 # Signal handler for graceful shutdown
 handle_signal() {
@@ -107,21 +107,19 @@ write_pid_file() {
 # Clean up PID files
 cleanup_pid_files() {
     info "Cleaning up PID files..."
-    rm -f "$PIDFILE" "$ROTATE_PIDFILE" "$MONITOR_PIDFILE" "$DISPLAY_SEQUENCE_FILE" "$REPAIR_LOCKFILE"
+    rm -f "$PIDFILE" "$ROTATE_PIDFILE" "$MONITOR_PIDFILE" "$DISPLAY_SEQUENCE_FILE"
+    rmdir "$REPAIR_LOCKDIR" 2>/dev/null || true
 }
 
 # Function to repair stream
 repair_stream() {
     local camera_idx="$1"
     
-    # Check for lock file
-    if [ -f "$REPAIR_LOCKFILE" ]; then
+    # Acquire atomic lock directory
+    if ! mkdir "$REPAIR_LOCKDIR" 2>/dev/null; then
         info "Repair process already running. Skipping."
         return 1
     fi
-    
-    # Create lock file
-    touch "$REPAIR_LOCKFILE"
     
     # Early exit if no omxplayer processes are running
     local omxplayer_running=false
@@ -135,7 +133,7 @@ repair_stream() {
     if [ "$omxplayer_running" = "false" ]; then
         local repair_camera_name="${camera_names[$1]}"
         info "No omxplayer processes running for $repair_camera_name. Skipping repair."
-        rm -f "$REPAIR_LOCKFILE" 2>/dev/null || true
+        rmdir "$REPAIR_LOCKDIR" 2>/dev/null || true
         return 0
     fi
     
@@ -170,7 +168,7 @@ repair_stream() {
         if check_stream_health "${camera_names[$camera_idx]}"; then
             info "Successfully repaired stream for ${camera_names[$camera_idx]}"
             log_event "stream.repair.success" "camera" "${camera_names[$camera_idx]}" "attempt" "$attempt"
-            rm -f "$REPAIR_LOCKFILE"
+            rmdir "$REPAIR_LOCKDIR" 2>/dev/null || true
             return 0
         fi
         
@@ -181,7 +179,7 @@ repair_stream() {
     
     error "Failed to repair stream for ${camera_names[$camera_idx]} after $max_repair_attempts attempts"
     log_event "stream.repair.failure" "camera" "${camera_names[$camera_idx]}" "max_attempts" "$max_repair_attempts"
-    rm -f "$REPAIR_LOCKFILE"
+    rmdir "$REPAIR_LOCKDIR" 2>/dev/null || true
     return 1
 }
 
