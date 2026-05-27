@@ -166,6 +166,12 @@ else
     fi
 fi
 
+# Validate the loaded camera configuration before proceeding
+validate_camera_config || {
+    error "Camera configuration validation failed. Check layout file."
+    exit 1
+}
+
 # Define PID files at the top with other variables
 PIDFILE="/var/run/displaycameras.pid"
 ROTATE_PIDFILE="/var/run/displaycameras.rotate.pid"
