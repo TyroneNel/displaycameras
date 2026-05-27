@@ -249,7 +249,7 @@ start)
         info "One or more feeds failed to start. Initiating repair procedure..."
         for i in ${!camera_feeds[@]}; do
             if ! check_stream_health "${camera_names[$i]}"; then
-                repair_stream "$i"
+                repair_stream "$i" || warn "Startup repair for ${camera_names[$i]} could not acquire lock (already repairing)"
             fi
         done
     fi
