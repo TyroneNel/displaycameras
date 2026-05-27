@@ -30,7 +30,8 @@ handle_signal() {
 
 # Clean up stale DBus address files
 cleanup_dbus_files() {
-    rm -f /tmp/omxplayerdbus.root* /tmp/omxplayerdbus.pi* 2>/dev/null || true
+    local dbus_addr="/tmp/omxplayerdbus.${USER:-root}"
+    rm -f "$dbus_addr" "$dbus_addr.pid" 2>/dev/null || true
 }
 
 # Register signal handlers
