@@ -184,7 +184,7 @@ if [ -z "${omx_timeout-}" ]; then
 fi
 
 # Ensure per-camera timeouts array exists (backward compat with old layout files)
-if [ -z "${camera_timeouts[@]-}" ] || [ ${#camera_timeouts[@]} -eq 0 ]; then
+if [ -z "${camera_timeouts+set}" ] || [ ${#camera_timeouts[@]} -eq 0 ]; then
     camera_timeouts=()
     for i in ${!camera_names[@]}; do
         camera_timeouts[$i]="$omx_timeout"

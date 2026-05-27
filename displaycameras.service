@@ -15,7 +15,7 @@ Wants=network-online.target
 # PID files and the cron-based repair job.
 Type=oneshot
 Restart=no
-TimeoutSec=5min
+TimeoutSec=infinity
 IgnoreSIGPIPE=no
 LimitNPROC=1
 KillMode=control-group
