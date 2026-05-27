@@ -18,11 +18,63 @@ displaycameras.service           systemd unit file
 
 ### Key Library Modules
 
-- `lib/player.sh` — `control_player()` is the *single chokepoint* for launching and repositioning omxplayer windows. It calculates on-screen vs off-screen placement using `DISPLAY_SEQUENCE` and `window_positions[]`.
-- `lib/rotation.sh` — `rotate_displays()` runs as a background loop. It increments `DISPLAY_SEQUENCE`, persists it to `/var/run/displaycameras.sequence`, then calls `control_player reposition` for every camera.
-- `lib/stream.sh` — `monitor_omxplayer_processes()` runs as a background health-check loop. Calls `check_stream_health()` then `repair_stream()` on failure.
-- `lib/service.sh` — `repair_stream()` uses a lockfile (`/var/run/displaycameras.repair.lock`) to prevent concurrent repairs and retries up to 5 times.
+- `lib/player.sh` — `control_player()` is the *single chokepoint* for launching and repositioning omxplayer windows. It calculates on-screen vs off-screen placement using `DISPLAY_SEQUENCE` and `window_positions[]`. Also handles stopping off-screen streams during rotation via `stop_stream()` and `camera_offscreen_state[]` to save GPU memory.
+- `lib/rotation.sh` — `rotate_displays()` runs as a background loop. It increments `DISPLAY_SEQUENCE`, persists it to `/var/run/displaycameras.sequence`, then calls `control_player reposition` for every camera. After rotation, restarts any previously-off-screen cameras that moved on-screen.
+- `lib/stream.sh` — `monitor_omxplayer_processes()` runs as a background health-check loop. Calls `check_stream_health()` then `repair_stream()` on failure. Also runs `cleanup_orphan_processes()` to remove zombie wrapper shells with no omxplayer.bin child.
+- `lib/service.sh` — `repair_stream()` uses a lockfile (`/var/run/displaycameras.repair.lock`) to prevent concurrent repairs and retries up to 5 times. Also provides `kill_stream_process()` with graduated signal escalation (SIGINT→SIGTERM→SIGKILL) wrapped in timeouts to avoid GPU DMA lock hangs, plus `cleanup_dbus_files()` for DBus cleanup.
 - `lib/functions.sh` — `validate_camera_config()` enforces: camera names must match `^[A-Za-z0-9_]+$`, feeds must start with `rtsp://`, and the `camera_names` and `camera_feeds` arrays must be the same length.
+
+## Logging
+
+### Log File
+
+All operational logs go to `/var/log/displaycameras.log`. The `status` command writes console-only output (never to the log file).
+
+### Log Levels
+
+| Level | Value | Description |
+|-------|-------|-------------|
+| FATAL | 0 | Unrecoverable error, service cannot continue |
+| ERROR | 1 | Action failed but service continues |
+| WARN  | 2 | Potential problem, attention may be needed |
+| INFO  | 3 | Normal operational messages |
+| DEBUG | 4 | Detailed trace for troubleshooting |
+
+### Usage
+
+```bash
+info "message"                     # normal operational
+warn "message"                     # potential issue
+error "message"                    # action failure
+debug "message"                    # only when debug=true in config
+fatal "message"                    # unrecoverable
+log_event "action" "key" "val"    # structured key=value event
+log_stream_action "action" "cam"  # camera-specific structured event
+```
+
+### Structured Logging
+
+Key lifecycle points emit machine-parseable `key=value` entries:
+
+```bash
+log_stream_action "stream.start" "FF" "position" "0 0 1200 1080" "window" "0"
+log_event "stream.repair.success" "camera" "FF" "attempt" "2"
+log_event "rotation.rotate" "sequence" "2"
+log_event "service.start"
+log_event "stream.cleanup.kill" "camera" "BY"
+log_event "stream.stop.force" "camera" "FG"
+log_event "stream.cleanup.duplicate" "camera" "SF"
+```
+
+### Log Rotation
+
+`/etc/logrotate.d/displaycameras` rotates logs daily, keeps 7 days, compresses with `delaycompress`. Uses `copytruncate` to avoid service restart.
+
+### Runtime Level Control
+
+- Set `debug="true"` in `displaycameras.conf` → enables DEBUG level
+- Set `LOG_LEVEL=2` environment variable → shows only WARN and above
+- Default: INFO (level 3)
 
 ## Configuration
 

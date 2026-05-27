@@ -11,12 +11,12 @@ REPAIR_LOCKFILE="/var/run/displaycameras.repair.lock"
 # Signal handler for graceful shutdown
 handle_signal() {
     local signal="$1"
-    log "INFO" "Received $signal, initiating graceful shutdown..."
+    info "Received $signal, initiating graceful shutdown..."
     
     # Clean up PID files
     cleanup_pid_files
     
-    log "INFO" "Terminating omxplayer processes..."
+    info "Terminating omxplayer processes..."
     timeout 10 pkill -f "omxplayer" 2>/dev/null || true
     sleep 1
     # Ensure dbus-daemon cleanup
@@ -24,7 +24,7 @@ handle_signal() {
     cleanup_dbus_files
     
     # Exit gracefully
-    log "INFO" "Shutdown complete"
+    info "Shutdown complete"
     exit 0
 }
 
@@ -46,6 +46,8 @@ trap 'handle_signal "SIGHUP"' SIGHUP
 kill_stream_process() {
     local camera_name="$1"
     local -i KILL_TIMEOUT=3
+    
+    log_event "stream.cleanup.kill" "camera" "$camera_name"
     
     # Find the shell wrapper PID(s) (omxplayer is a bash wrapper script)
     local wrapper_pid
@@ -71,7 +73,7 @@ kill_stream_process() {
             # If still alive after SIGKILL (likely stuck in GPU DMA),
             # log and move on – orphan cleanup will catch it later.
             if kill -0 "$wrapper_pid" 2>/dev/null; then
-                log "WARN" "PID $wrapper_pid ($camera_name) survived SIGKILL (probably GPU DMA lock); leaving for orphan cleanup"
+                warn "PID $wrapper_pid ($camera_name) survived SIGKILL (probably GPU DMA lock); leaving for orphan cleanup"
             fi
         fi
     done < <(pgrep -f "omxplayer.*$camera_name" 2>/dev/null)
@@ -99,13 +101,13 @@ check_service_status() {
 
 # Write PID file for systemd
 write_pid_file() {
-    log "INFO" "Creating PID file at $PIDFILE"
+    info "Creating PID file at $PIDFILE"
     echo $$ > "$PIDFILE"
 }
 
 # Clean up PID files
 cleanup_pid_files() {
-    log "INFO" "Cleaning up PID files..."
+    info "Cleaning up PID files..."
     rm -f "$PIDFILE" "$ROTATE_PIDFILE" "$MONITOR_PIDFILE" "$DISPLAY_SEQUENCE_FILE" "$REPAIR_LOCKFILE"
 }
 
@@ -115,7 +117,7 @@ repair_stream() {
     
     # Check for lock file
     if [ -f "$REPAIR_LOCKFILE" ]; then
-        log "INFO" "Repair process already running. Skipping."
+        info "Repair process already running. Skipping."
         return 1
     fi
     
@@ -133,7 +135,7 @@ repair_stream() {
 
     if [ "$omxplayer_running" = "false" ]; then
         local repair_camera_name="${camera_names[$1]}"
-        log "INFO" "No omxplayer processes running for $repair_camera_name. Skipping repair."
+        info "No omxplayer processes running for $repair_camera_name. Skipping repair."
         rm -f "$REPAIR_LOCKFILE" 2>/dev/null || true
         return 0
     fi
@@ -141,14 +143,16 @@ repair_stream() {
     local max_repair_attempts=5
     local attempt=1
     
-    log "INFO" "Attempting to repair stream for camera ${camera_names[$camera_idx]}"
+    info "Attempting to repair stream for camera ${camera_names[$camera_idx]}"
+    log_stream_action "stream.repair.start" "${camera_names[$camera_idx]}"
     
     while [ $attempt -le $max_repair_attempts ]; do
-        log "INFO" "Repair attempt $attempt for ${camera_names[$camera_idx]}"
+        info "Repair attempt $attempt for ${camera_names[$camera_idx]}"
+        log_stream_action "stream.repair.attempt" "${camera_names[$camera_idx]}" "attempt" "$attempt"
         
         # Check network connectivity first
         if ! check_network_connectivity "${camera_feeds[$camera_idx]}" ; then
-            log "ERROR" "Network connectivity check failed for ${camera_names[$camera_idx]}"
+            error "Network connectivity check failed for ${camera_names[$camera_idx]}"
             sleep 5
             attempt=$((attempt + 1))
             continue
@@ -166,17 +170,19 @@ repair_stream() {
         
         # Check if stream is healthy
         if check_stream_health "${camera_names[$camera_idx]}"; then
-            log "INFO" "Successfully repaired stream for ${camera_names[$camera_idx]}"
+            info "Successfully repaired stream for ${camera_names[$camera_idx]}"
+            log_event "stream.repair.success" "camera" "${camera_names[$camera_idx]}" "attempt" "$attempt"
             rm -f "$REPAIR_LOCKFILE"
             return 0
         fi
         
-        log "WARN" "Repair attempt $attempt failed for ${camera_names[$camera_idx]}"
+        warn "Repair attempt $attempt failed for ${camera_names[$camera_idx]}"
         attempt=$((attempt + 1))
         sleep 3
     done
     
-    log "ERROR" "Failed to repair stream for ${camera_names[$camera_idx]} after $max_repair_attempts attempts"
+    error "Failed to repair stream for ${camera_names[$camera_idx]} after $max_repair_attempts attempts"
+    log_event "stream.repair.failure" "camera" "${camera_names[$camera_idx]}" "max_attempts" "$max_repair_attempts"
     rm -f "$REPAIR_LOCKFILE"
     return 1
 }
@@ -188,7 +194,7 @@ check_stream_health() {
     # First, check if the player is reporting a "Playing" status.
     local status=$(timeout 2s omxplayer_dbuscontrol "$camera_name" getplaystatus 2>/dev/null || echo "Not running")
     if [ "$status" != "Playing" ]; then
-        log "WARN" "Stream health check for '$camera_name' failed: Status is '$status'."
+        warn "Stream health check for '$camera_name' failed: Status is '$status'."
         return 1
     fi
 
@@ -207,7 +213,7 @@ check_stream_health() {
     # If the position is greater than 0 and hasn't changed, the stream is frozen.
     # The > 0 check avoids false positives right at the very start of a stream.
     if [ "$position1" -gt 0 ] && [ "$position1" -eq "$position2" ]; then
-        log "ERROR" "Stream health check failed for '$camera_name': Stream appears to be frozen at position ${position1}s."
+        error "Stream health check failed for '$camera_name': Stream appears to be frozen at position ${position1}s."
         return 1
     fi
 

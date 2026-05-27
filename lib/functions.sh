@@ -14,18 +14,18 @@ validate_camera_config() {
     
     # Check if arrays are defined
     if [ ${#camera_names[@]} -eq 0 ]; then
-        log "ERROR" "No camera names defined"
+        error "No camera names defined"
         return 1
     fi
     
     if [ ${#camera_feeds[@]} -eq 0 ]; then
-        log "ERROR" "No camera feeds defined"
+        error "No camera feeds defined"
         return 1
     fi
     
     # Check array length matching
     if [ ${#camera_names[@]} -ne ${#camera_feeds[@]} ]; then
-        log "ERROR" "Camera names (${#camera_names[@]}) and feeds (${#camera_feeds[@]}) arrays have different lengths"
+        error "Camera names (${#camera_names[@]}) and feeds (${#camera_feeds[@]}) arrays have different lengths"
         return 1
     fi
     
@@ -39,23 +39,23 @@ validate_camera_config() {
         
         # Check camera name format
         if ! [[ "$name" =~ $valid_name_regex ]]; then
-            log "ERROR" "Invalid camera name '$name'. Names must contain only A-Z, a-z, 0-9, and _"
+            error "Invalid camera name '$name'. Names must contain only A-Z, a-z, 0-9, and _"
             errors=$((errors + 1))
         fi
         
         # Check RTSP URL format
         if ! [[ "$feed" =~ $valid_url_regex ]]; then
-            log "ERROR" "Invalid camera feed URL for '$name': $feed"
+            error "Invalid camera feed URL for '$name': $feed"
             errors=$((errors + 1))
         fi
     done
     
     if [ $errors -gt 0 ]; then
-        log "ERROR" "Found $errors validation errors in camera configuration"
+        error "Found $errors validation errors in camera configuration"
         return 1
     fi
     
-    log "INFO" "Camera configuration validated: ${#camera_names[@]} cameras"
+    info "Camera configuration validated: ${#camera_names[@]} cameras"
     return 0
 }
 

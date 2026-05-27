@@ -25,7 +25,7 @@ cleanup_orphan_processes() {
             local child_count
             child_count=$(pgrep -P "$wrapper_pid" 2>/dev/null | wc -l)
             if [ "$child_count" -eq 0 ]; then
-                log "WARN" "Cleaning up defunct wrapper process $wrapper_pid for $name"
+                warn "Cleaning up defunct wrapper process $wrapper_pid for $name"
                 kill -9 "$wrapper_pid" 2>/dev/null || true
             fi
         done
@@ -35,14 +35,14 @@ cleanup_orphan_processes() {
 # Function to monitor and cleanup omxplayer processes
 monitor_omxplayer_processes() {
     # Set up signal handling
-    trap 'log "INFO" "Monitor loop received shutdown signal"; exit 0' SIGTERM SIGINT
+    trap 'info "Monitor loop received shutdown signal"; exit 0' SIGTERM SIGINT
     
     # Set a default for monitorinterval if it's not defined.
     : ${monitorinterval:=10}
     while true; do
         # Check if main service is still running
         if [ ! -f "$PIDFILE" ]; then
-            log "INFO" "Main service stopped, ending monitoring"
+            info "Main service stopped, ending monitoring"
             exit 0
         fi
 
@@ -51,7 +51,7 @@ monitor_omxplayer_processes() {
 
         for i in ${!camera_names[@]}; do
             if ! check_stream_health "${camera_names[$i]}"; then
-                log "WARN" "Stream ${camera_names[$i]} appears unhealthy"
+                warn "Stream ${camera_names[$i]} appears unhealthy"
                 repair_stream "$i"
             fi
         done

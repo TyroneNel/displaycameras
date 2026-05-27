@@ -8,7 +8,8 @@ stop_stream() {
     local camera_idx="$1"
     local camera_name="${camera_names[$camera_idx]}"
     
-    log "INFO" "Stopping stream for $camera_name (off-screen)"
+    info "Stopping stream for $camera_name (off-screen)"
+    log_stream_action "stream.stop" "$camera_name" "reason" "off-screen-rotation"
     
     # Prefer DBus quit for clean shutdown, but don't fail if DBus is already gone.
     # This covers both graceful stop and force-kill fallback via kill_stream_process().
@@ -25,8 +26,9 @@ stop_stream() {
     
     # If still alive, force clean-up.
     if pgrep -f "omxplayer.bin.*$camera_name" >/dev/null 2>&1; then
-        log "WARN" "$camera_name did not stop cleanly, forcing cleanup"
+        warn "$camera_name did not stop cleanly, forcing cleanup"
         kill_stream_process "$camera_name"
+        log_event "stream.stop.force" "camera" "$camera_name"
     fi
     
     # After a successful stop, kill any stale dbus-daemon and clean files
@@ -72,15 +74,17 @@ control_player() {
         # This prevents duplicate/overlapping streams that can happen when a camera
         # was stopped off-screen and is now being restarted on-screen.
         if pgrep -f "omxplayer\.bin.*$camera_name" >/dev/null 2>&1; then
-            log "WARN" "Old omxplayer for $camera_name is still running, stopping before restart"
+            warn "Old omxplayer for $camera_name is still running, stopping before restart"
+            log_event "stream.cleanup.duplicate" "camera" "$camera_name"
             kill_stream_process "$camera_name"
         fi
         if [ "${camera_offscreen_state[$camera_name]}" = "true" ]; then
             # Camera was off-screen and is now being started on-screen.
-            log "INFO" "Restarting off-screen stream for $camera_name on-screen"
+            info "Restarting off-screen stream for $camera_name on-screen"
             camera_offscreen_state[$camera_name]="false"
         fi
-        log "INFO" "Starting stream for $camera_name in position $position"
+        info "Starting stream for $camera_name in position $position"
+        log_stream_action "stream.start" "$camera_name" "position" "$position" "window" "$display_rank"
         local camera_feed="${camera_feeds[$camera_idx]}"
         debug "Starting omxplayer for $camera_name with feed: $camera_feed"
         omxplayer --no-keys --no-osd --avdict rtsp_transport:tcp --win "$position" "$camera_feed" --live -n -1 --timeout "$omx_timeout" --dbus_name "org.mpris.MediaPlayer2.omxplayer.$camera_name" >/dev/null 2>&1 &
@@ -95,12 +99,13 @@ control_player() {
             return
         fi
         
-        log "INFO" "Repositioning stream for $camera_name to $position"
+        info "Repositioning stream for $camera_name to $position"
+        log_stream_action "stream.reposition" "$camera_name" "position" "$position" "window" "$display_rank"
         debug "Executing reposition command: timeout 2s omxplayer_dbuscontrol \"$camera_name\" setvideopos $position"
         timeout 2s omxplayer_dbuscontrol "$camera_name" setvideopos $position || true
         ;;
     *)
-        log "ERROR" "Unknown action '$action' for control_player"
+        error "Unknown action '$action' for control_player"
         return 1
         ;;
     esac

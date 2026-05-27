@@ -27,28 +27,28 @@ check_rotation_status() {
 # Function to start rotation
 start_rotation() {
     if [ "$rotate" != "true" ]; then
-        log "INFO" "Rotation not enabled in config"
+        info "Rotation not enabled in config"
         return 1
     fi
     
     if check_rotation_status; then
-        log "INFO" "Rotation already running"
+        info "Rotation already running"
         return 0
     fi
     
     # Start rotation in background
     rotate_displays &
     echo $! > "$ROTATE_PIDFILE"
-    log "INFO" "Started rotation process (PID: $(cat $ROTATE_PIDFILE))"
+    info "Started rotation process (PID: $(cat $ROTATE_PIDFILE))"
 }
 
 # Function to rotate displays
 rotate_displays() {
     # Set up signal handling
-    trap 'log "INFO" "Rotation loop received shutdown signal"; rm -f "$ROTATE_PIDFILE"; exit 0' SIGTERM SIGINT
+    trap 'info "Rotation loop received shutdown signal"; rm -f "$ROTATE_PIDFILE"; exit 0' SIGTERM SIGINT
     
     # Immediately position streams on first run
-    log "INFO" "Performing initial stream positioning"
+    info "Performing initial stream positioning"
     for i in ${!camera_names[*]}; do
         debug "Initial reposition for camera_idx: $i"
         control_player "reposition" "$i"
@@ -58,14 +58,14 @@ rotate_displays() {
     while true; do
         # Check if main service is still running
         if [ ! -f "$PIDFILE" ]; then
-            log "INFO" "Main service stopped, ending rotation"
+            info "Main service stopped, ending rotation"
             rm -f "$ROTATE_PIDFILE"
             exit 0
         fi
         
         # Adjust rotation delay based on system conditions
         local adjusted_delay=$(adjust_timing "$rotatedelay")
-        log "INFO" "Using adjusted rotation delay: $adjusted_delay seconds"
+        info "Using adjusted rotation delay: $adjusted_delay seconds"
         sleep "$adjusted_delay"
         
         # Store current sequence
@@ -74,10 +74,11 @@ rotate_displays() {
             DISPLAY_SEQUENCE=0
         fi
         debug "New DISPLAY_SEQUENCE: $DISPLAY_SEQUENCE"
+        log_event "rotation.rotate" "sequence" "$DISPLAY_SEQUENCE"
         
         # Check system resources before rotation
         if ! check_system_resources; then
-            log "WARN" "System resources strained, increasing rotation delay"
+            warn "System resources strained, increasing rotation delay"
             sleep 2
         fi
         
@@ -95,14 +96,14 @@ rotate_displays() {
             local camera_name="${camera_names[$i]}"
             if [ "$display_rank" -lt "$num_windows" ]; then
                 if [ "${camera_offscreen_state[$camera_name]}" = "true" ]; then
-                    log "INFO" "Camera $camera_name moved on-screen, restarting stream"
+                    info "Camera $camera_name moved on-screen, restarting stream"
                     control_player "start" "$i"
                     sleep "$rotation_sleep"
                 fi
             fi
         done
         
-        log "INFO" "Saving current display sequence: $DISPLAY_SEQUENCE"
+        info "Saving current display sequence: $DISPLAY_SEQUENCE"
         echo $DISPLAY_SEQUENCE > $DISPLAY_SEQUENCE_FILE
     done
 }

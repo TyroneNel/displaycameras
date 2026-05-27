@@ -25,11 +25,11 @@ check_system_resources() {
     local mem_usage=$((mem_used * 100 / mem_total))
     
     # Log resource usage
-    log "INFO" "System resources - CPU: $cpu_usage%, Memory: $mem_usage%"
+    info "System resources - CPU: $cpu_usage%, Memory: $mem_usage%"
     
     # Check against thresholds
     if [ "$cpu_usage" -ge "$cpu_threshold" ] || [ "$mem_usage" -ge "$mem_threshold" ]; then
-        log "WARN" "System resources critical - CPU: $cpu_usage%, Memory: $mem_usage%"
+        warn "System resources critical - CPU: $cpu_usage%, Memory: $mem_usage%"
         return 1
     fi
     
@@ -44,7 +44,7 @@ adjust_timing() {
     # Check system resources
     if ! check_system_resources; then
         multiplier=$((multiplier + 1))
-        log "INFO" "Increasing delay due to system load"
+        info "Increasing delay due to system load"
     fi
     
     # Check network conditions
@@ -62,7 +62,7 @@ adjust_timing() {
     # Adjust multiplier based on latency
     if [ "$avg_latency" -gt 100 ]; then
         multiplier=$((multiplier + 1))
-        log "INFO" "Increasing delay due to network latency ($avg_latency ms)"
+        info "Increasing delay due to network latency ($avg_latency ms)"
     fi
     
     # Calculate final delay

@@ -42,7 +42,7 @@ The `displaycameras` application is a robust system designed for continuous, mul
 This directory contains the modular shell script libraries that provide the core logic.
 
 -   **`functions.sh`**: The central library file that simply sources all the other function modules (`logging.sh`, `stream.sh`, etc.) to make them available to the main script.
--   **`logging.sh`**: Provides standardized logging functions (`log`, `info`, `warn`, `error`) that write timestamped messages to `/var/log/displaycameras.log`.
+-   **`logging.sh`**: Provides standardized logging with level-based filtering (FATAL through DEBUG). Supports structured key=value events via `log_event()` and `log_stream_action()` for machine-parseable log entries. Writes timestamped messages to `/var/log/displaycameras.log` and echoes to stderr when running interactively. Log level is controlled by the `debug` config flag or the `LOG_LEVEL` environment variable.
 -   **`stream.sh`**: Manages the lifecycle of camera streams. Contains `start_stream` to launch `omxplayer` instances and `monitor_omxplayer_processes` to periodically check stream health.
 -   **`rotation.sh`**: Contains the core logic for the camera rotation feature. The `rotate_displays` function runs as a background process, looping continuously to shift the camera positions.
 -   **`service.sh`**: Handles service-related tasks, including PID file management (`write_pid_file`, `cleanup_pid_files`), stream health checks (`check_stream_health`), and the primary `repair_stream` logic.
@@ -71,4 +71,24 @@ This directory contains the modular shell script libraries that provide the core
 3.  **Monitoring and Repair**:
     -   **Real-time**: The `monitor_omxplayer_processes` loop runs continuously, calling `check_stream_health` for each camera. If a stream is found to be unhealthy, it triggers the `repair_stream` function.
     -   **Scheduled**: The `repaircameras.cron` job runs every minute, executing `/usr/bin/displaycameras repair`. This command also calls `check_stream_health` and triggers `repair_stream` for any failed streams, providing a redundant safety net.
-    -   **Repair Logic (`repair_stream`)**: When a stream fails, this function first checks network connectivity to the camera. If the network is reachable, it quits the failed `omxplayer` instance and attempts to restart it by calling `start_stream` again.
+     -   **Repair Logic (`repair_stream`)**: When a stream fails, this function first checks network connectivity to the camera. If the network is reachable, it quits the failed `omxplayer` instance and attempts to restart it by calling `start_stream` again.
+
+## Recent Changes (May 2026)
+
+### Stream Cleanup and Stability Fixes
+
+- **Graduated process termination**: `kill_stream_process()` uses SIGINT → SIGTERM → SIGKILL escalation with timeout-wrapped kill commands to prevent blocking on GPU DMA-locked omxplayer.bin processes.
+- **Off-screen stream management**: Rotation now stops off-screen streams instead of repositioning them, saving GPU memory. The `camera_offscreen_state[]` associative array tracks which cameras are off-screen.
+- **Orphan process cleanup**: `cleanup_orphan_processes()` in the monitor loop detects and removes zombie omxplayer wrapper shells that have no `omxplayer.bin` child process.
+- **DBus cleanup**: `cleanup_dbus_files()` ensures stale DBus address files are removed on stop/restart/signal. Shutdown handlers now properly terminate dbus-daemon processes.
+- **Duplicate-start guard**: `displaycameras start` now checks for an existing PID file and skips startup if the service is already running, preventing multiple concurrent instances.
+- **PID file persistence**: The start process uses `wait` to stay alive as the service controller, preventing premature PID file deletion.
+- **Repair guard**: `repair_stream()` skips the repair cycle if no `omxplayer.bin` processes are running, preventing log spam from cron-triggered repairs when the service is down.
+
+### Logging Standardization
+
+- **Level-based filtering**: Numeric log levels (0-4: FATAL through DEBUG) with runtime control via `LOG_LEVEL` env var or `debug=true` config setting.
+- **Structured logging**: `log_event()` and `log_stream_action()` emit machine-parseable `key=value` entries for stream lifecycle, repair, rotation, and cleanup events.
+- **Console output**: Logs echo to stderr when running interactively for easier debugging.
+- **Log rotation**: `/etc/logrotate.d/displaycameras` rotates `/var/log/displaycameras.log` daily, keeps 7 days, compresses with `delaycompress` and `copytruncate`.
+- **Unified function names**: `info()`, `warn()`, `error()`, `fatal()`, `debug()` are the canonical logging wrappers. The install script uses the same names and timestamp format.

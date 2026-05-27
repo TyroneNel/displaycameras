@@ -22,13 +22,13 @@ source "/usr/lib/displaycameras/player.sh"
 
 # Exit if not root
 if [[ $EUID -ne 0 ]]; then
-   log "ERROR" "This script must be run as root"
+   error "This script must be run as root"
    exit 1
 fi
 
 # Exit if omxplayer_dbus is not executable and in the PATH
 if ! command_exists omxplayer_dbuscontrol; then
-   log "ERROR" "omxplayer_dbuscontrol not found in PATH or not executable"
+   error "omxplayer_dbuscontrol not found in PATH or not executable"
    exit 1
 fi
 
@@ -36,7 +36,7 @@ fi
 if [ -f /etc/displaycameras/displaycameras.conf ]; then
    source /etc/displaycameras/displaycameras.conf
 else
-   log "ERROR" "/etc/displaycameras/displaycameras.conf does not exist or is not readable."
+   error "/etc/displaycameras/displaycameras.conf does not exist or is not readable."
    exit 1
 fi
 
@@ -46,10 +46,10 @@ generate_layout_file() {
     local default_layout="/etc/displaycameras/layout.conf.default"
     local new_layout_file="/etc/displaycameras/layout.conf.$resolution"
     
-    log "INFO" "Attempting to generate new layout file for $resolution..."
+    info "Attempting to generate new layout file for $resolution..."
 
     if [ ! -f "$default_layout" ]; then
-        log "ERROR" "Default layout file '$default_layout' not found. Cannot generate new layout."
+        error "Default layout file '$default_layout' not found. Cannot generate new layout."
         return 1
     fi
 
@@ -76,7 +76,7 @@ generate_layout_file() {
         local source_h=${max_y2:-1080}
         
         if [ "$source_w" -eq 0 ] || [ "$source_h" -eq 0 ]; then
-            log "WARN" "Could not determine source resolution from default layout. Assuming 1920x1080."
+            warn "Could not determine source resolution from default layout. Assuming 1920x1080."
             source_w=1920
             source_h=1080
         fi
@@ -126,11 +126,11 @@ generate_layout_file() {
     ) || result=$?
     
     if [ $result -ne 0 ]; then
-        log "ERROR" "Failed to generate new layout file."
+        error "Failed to generate new layout file."
         rm -f "$new_layout_file" # Clean up failed attempt
         return 1
     else
-        log "INFO" "Successfully generated new layout file: $new_layout_file"
+        info "Successfully generated new layout file: $new_layout_file"
         chown root:root "$new_layout_file"
         chmod 0644 "$new_layout_file"
         return 0
@@ -142,16 +142,16 @@ if [ "${displaydetect-}" = "true" ] && command_exists fbset; then
     resolution=$(fbset -s | awk '/geometry/ {print $2"x"$3}')
     layout_file="/etc/displaycameras/layout.conf.$resolution"
     if [ -f "$layout_file" ]; then
-        log "INFO" "Detected resolution $resolution, loading layout from $layout_file"
+        info "Detected resolution $resolution, loading layout from $layout_file"
         source "$layout_file"
     else
         if generate_layout_file "$resolution"; then
             source "$layout_file"
         elif [ -f "/etc/displaycameras/layout.conf.default" ]; then
-            log "WARN" "Layout generation failed. Falling back to default layout."
+            warn "Layout generation failed. Falling back to default layout."
             source "/etc/displaycameras/layout.conf.default"
         else
-            log "ERROR" "Layout generation failed and no default layout is available."
+            error "Layout generation failed and no default layout is available."
             exit 1
         fi
     fi
@@ -161,7 +161,7 @@ else
     elif [ -f /etc/displaycameras/layout.conf.default ]; then
        source /etc/displaycameras/layout.conf.default
     else
-       log "ERROR" "/etc/displaycameras/layout.conf.default does not exist or is not readable."
+       error "/etc/displaycameras/layout.conf.default does not exist or is not readable."
        exit 1
     fi
 fi
@@ -205,17 +205,18 @@ fi
 
 case "$1" in
 start)
-    log "INFO" "Displaycameras service starting..."
+    info "Displaycameras service starting..."
+    log_event "service.start"
     
     # Prevent duplicate start: if PID file exists and process is alive, bail out.
     if [ -f "$PIDFILE" ]; then
         local existing_pid
         existing_pid=$(cat "$PIDFILE")
         if kill -0 "$existing_pid" 2>/dev/null; then
-            log "INFO" "Displaycameras is already running (PID $existing_pid). Skipping start."
+            info "Displaycameras is already running (PID $existing_pid). Skipping start."
             exit 0
         else
-            log "WARN" "Stale PID file found. Removing and continuing start."
+            warn "Stale PID file found. Removing and continuing start."
             rm -f "$PIDFILE"
         fi
     fi
@@ -223,12 +224,12 @@ start)
     write_pid_file
     
     # Kill any existing omxplayer processes
-    log "INFO" "Terminating existing omxplayer processes..."
+    info "Terminating existing omxplayer processes..."
     timeout 10 pkill -f "omxplayer" 2>/dev/null || true
     sleep 1
     
     if [ "${blank-}" = "true" ]; then
-        log "INFO" "Blanking screen"
+        info "Blanking screen"
         if command_exists fbi; then
             fbi -T 2 --noverbose /usr/bin/black.png >/dev/null 2>&1
         fi
@@ -248,7 +249,7 @@ start)
     done
     
     if [ "$feedfailure" = "true" ]; then
-        log "INFO" "One or more feeds failed to start. Initiating repair procedure..."
+        info "One or more feeds failed to start. Initiating repair procedure..."
         for i in ${!camera_feeds[@]}; do
             if ! check_stream_health "${camera_names[$i]}"; then
                 repair_stream "$i"
@@ -258,26 +259,27 @@ start)
     
     # Start rotation if configured
     if [ "${rotate-}" = "true" ]; then
-        log "INFO" "Initializing camera rotation..."
+        info "Initializing camera rotation..."
         start_rotation
     fi
     
     # Start monitoring process
-    log "INFO" "Starting stream monitoring process..."
+    info "Starting stream monitoring process..."
     monitor_omxplayer_processes &
     echo $! > "$MONITOR_PIDFILE"
-    log "INFO" "Monitoring process started with PID: $(cat $MONITOR_PIDFILE)"
-    log "INFO" "Displaycameras service started successfully."
+    info "Monitoring process started with PID: $(cat $MONITOR_PIDFILE)"
+    info "Displaycameras service started successfully."
     # Wait for background jobs so the PID file stays alive and
     # the signal handler can catch SIGTERM for graceful shutdown.
     wait
     ;;
     
 stop)
-    log "INFO" "Displaycameras service stopping..."
+    info "Displaycameras service stopping..."
+    log_event "service.stop"
     if [ -f "$PIDFILE" ]; then
         cleanup_pid_files
-        log "INFO" "Terminating omxplayer processes..."
+        info "Terminating omxplayer processes..."
         timeout 10 pkill -f "omxplayer" 2>/dev/null || true
         sleep 1
         # Ensure dbus-daemon cleanup
@@ -289,11 +291,11 @@ stop)
             fi
         fi
     fi
-    log "INFO" "Displaycameras service stopped."
+    info "Displaycameras service stopped."
     ;;
     
 restart)
-    log "INFO" "Restarting displaycameras service..."
+    info "Restarting displaycameras service..."
     $0 stop
     sleep 1
     $0 start
@@ -301,17 +303,17 @@ restart)
     
 repair)
     if [ ! -f "$PIDFILE" ]; then 
-        log "WARN" "Repair command issued, but service is not running."
+        warn "Repair command issued, but service is not running."
         exit 0
     fi
     
-    log "INFO" "Starting repair procedure..."
+    info "Starting repair procedure..."
     for i in ${!camera_feeds[@]}; do
         if ! check_stream_health "${camera_names[$i]}"; then
             repair_stream "$i"
         fi
     done
-    log "INFO" "Repair procedure finished."
+    info "Repair procedure finished."
     ;;
     
 status)

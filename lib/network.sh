@@ -28,7 +28,7 @@ check_network_connectivity() {
         sleep 1
     done
     
-    log "ERROR" "Failed to reach host $host$port_msg after $max_attempts attempts"
+    error "Failed to reach host $host$port_msg after $max_attempts attempts"
     return 1
 }
 
