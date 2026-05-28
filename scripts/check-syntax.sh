@@ -7,7 +7,7 @@ REPO_ROOT="$(dirname "$DIR")"
 errors=0
 checked=0
 
-for f in "$REPO_ROOT"/*.sh "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/scripts/*.sh; do
+for f in "$REPO_ROOT"/displaycameras "$REPO_ROOT"/omxplayer_dbuscontrol "$REPO_ROOT"/*.sh "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/scripts/*.sh; do
     [ -f "$f" ] || continue
     if ! bash -n "$f" 2>&1; then
         echo "FAIL: $f" >&2

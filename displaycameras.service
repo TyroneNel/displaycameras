@@ -18,7 +18,6 @@ Restart=on-failure
 RestartSec=10
 TimeoutStopSec=30
 IgnoreSIGPIPE=no
-LimitNPROC=1
 KillMode=control-group
 ExecStart=/usr/bin/displaycameras start
 ExecStop=/usr/bin/displaycameras stop

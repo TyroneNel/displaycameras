@@ -138,6 +138,8 @@ generate_layout_file() {
 
         # Create the new layout file by replacing the window_positions block
         local temp_file=$(mktemp)
+        cleanup_temp() { rm -f "$temp_file"; }
+        trap cleanup_temp EXIT
         local header_added=false
         local in_block=false
         

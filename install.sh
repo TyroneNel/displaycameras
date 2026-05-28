@@ -181,7 +181,9 @@ info "Installing configuration files..."
 if [ -d "/etc/displaycameras" ]; then
     info "Backing up existing configuration to /etc/displaycameras/bak..."
     /bin/mkdir -p /etc/displaycameras/bak
-    /bin/mv -f /etc/displaycameras/*.conf* /etc/displaycameras/bak/ 2>/dev/null || true
+    for conf_file in displaycameras.conf layout.conf.default layout.conf.1920x1080; do
+        [ -f "/etc/displaycameras/$conf_file" ] && /bin/mv -f "/etc/displaycameras/$conf_file" /etc/displaycameras/bak/ 2>/dev/null || true
+    done
 fi
 cleanup_file "$DIR/displaycameras.conf" "/etc/displaycameras/displaycameras.conf"
 cleanup_file "$DIR/layout.conf.default" "/etc/displaycameras/layout.conf.default"
