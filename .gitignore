@@ -27,6 +27,12 @@ __pycache__/
 *.pyc
 *.pyo
 
+# --- Running config (use .example files as templates) ---
+displaycameras.conf
+layout.conf.default
+layout.conf.1920x1080
+layout.conf
+
 # --- Project docs / internal tooling ---
 docs/
 .kilo/

@@ -1,0 +1,64 @@
+# This is the camera feed/windows layout configuration file for the
+# displaycameras service.  It ONLY configures the layout and feeds for
+# the cameras; the rest of the configuration is in displaycameras.conf.
+# See the comments in that file for notes on configuring the below.
+
+# This example defines seven 1/2-HD windows, three of which are off-screen to the right,
+# through which the service rotates six camera feeds (it actually uses only six windows)
+# on a full-HD monitor.  If this suites your needs, modify only the camera names to taste
+# and feed URLs to what your cameras or NVR provides.
+
+# Window names
+
+# 2x2 screen with 3 off-screen windows
+windows=(upper_left upper_right lower_left lower_right off_screen off_screen2 off_screen3)
+# Make sure to account for each window above in the list below.
+
+# Windows positions
+
+window_positions=(
+#large_left
+"0 0 1200 1080" \
+
+#top_right
+"1200 0 1920 360" \
+#middle_right
+"1200 360 1920 720" \
+#bottom_right
+"1200 720 1920 1080" \
+
+#bottom_center
+#"427 480 853 720" \
+#bottom_left
+#"0 480 427 720" \
+)
+
+# Camera Names
+camera_names=(FF FG SF BY)
+
+# Make sure to account for each camera above in the list of feeds below.
+
+# Camera Feeds
+
+camera_feeds=(
+#FF
+"rtsp://192.168.x.x:7447/camera_feed_1" \
+#FG
+"rtsp://192.168.x.x:7447/camera_feed_2" \
+#SF
+"rtsp://192.168.x.x:7447/camera_feed_3" \
+#BY
+"rtsp://192.168.x.x:7447/camera_feed_4" 
+)
+
+# Per-camera network timeout (seconds) used when that camera occupies
+# the main/large window (position 0). When on smaller windows, the
+# global omx_timeout from displaycameras.conf is used instead.
+# Order must match camera_names array.
+camera_timeouts=(45 45 45 45)
+
+# Are we rotating cameras through the window matrix? (default false if not set here)
+rotate="true"
+
+# A variable setting how many windows to rotate through in one operation.  Setting this to the number of on-screen windows at one time achieves a sort of screen "flop" from one set of feeds to another (or a series of screen fulls)
+# If you set this higher than the number of cameras, the system just sets it back to 1.  Sane values are 1 through the number of cameras configured.
