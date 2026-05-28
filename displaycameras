@@ -26,9 +26,15 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# Exit if omxplayer_dbus is not executable and in the PATH
+# Exit if omxplayer_dbuscontrol is not executable and in the PATH
 if ! command_exists omxplayer_dbuscontrol; then
    error "omxplayer_dbuscontrol not found in PATH or not executable"
+   exit 1
+fi
+
+# Exit if omxplayer is not executable and in the PATH
+if ! command_exists omxplayer; then
+   error "omxplayer not found in PATH or not executable"
    exit 1
 fi
 
