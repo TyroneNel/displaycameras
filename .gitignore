@@ -27,4 +27,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# --- Project-specific ---
+# --- Project docs / internal tooling ---
+docs/
+.kilo/
