@@ -37,6 +37,10 @@ monitor_omxplayer_processes() {
     # Set up signal handling
     trap 'info "Monitor loop received shutdown signal"; exit 0' SIGTERM SIGINT
     
+    # Disable exit-on-error so individual command failures don't kill the monitor.
+    # The monitor should be resilient — log failures and continue checking.
+    set +e
+    
     # Set a default for monitorinterval if it's not defined.
     : ${monitorinterval:=10}
     while true; do
@@ -47,12 +51,12 @@ monitor_omxplayer_processes() {
         fi
 
         # Detect and clean zombie/defunct wrapper processes
-        cleanup_orphan_processes
+        cleanup_orphan_processes || true
 
         for i in ${!camera_names[@]}; do
             if ! check_stream_health "${camera_names[$i]}"; then
                 warn "Stream ${camera_names[$i]} appears unhealthy"
-                repair_stream "$i"
+                repair_stream "$i" || warn "Repair for ${camera_names[$i]} failed or is already running"
             fi
         done
         sleep $monitorinterval

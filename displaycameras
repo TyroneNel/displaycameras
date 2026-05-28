@@ -38,12 +38,45 @@ if ! command_exists omxplayer; then
    exit 1
 fi
 
+# Check core runtime dependencies
+for cmd in pgrep pkill timeout; do
+    if ! command_exists "$cmd"; then
+        error "$cmd not found in PATH — required for process management"
+        exit 1
+    fi
+done
+
+# Verify library directory exists
+if [ ! -d /usr/lib/displaycameras ]; then
+    error "/usr/lib/displaycameras directory not found — re-run install.sh"
+    exit 1
+fi
+for lib in logging.sh stream.sh network.sh system.sh rotation.sh service.sh player.sh; do
+    if [ ! -f "/usr/lib/displaycameras/$lib" ]; then
+        error "Library /usr/lib/displaycameras/$lib not found — re-run install.sh"
+        exit 1
+    fi
+done
+
 # Load configuration
 if [ -f /etc/displaycameras/displaycameras.conf ]; then
    source /etc/displaycameras/displaycameras.conf
 else
    error "/etc/displaycameras/displaycameras.conf does not exist or is not readable."
-   exit 1
+    exit 1
+fi
+
+# Validate config-dependent runtime dependencies
+if [ "${blank-}" = "true" ] && ! command_exists fbi; then
+    error "blank=true is set but fbi is not installed (needed for screen blanking)"
+    exit 1
+fi
+if [ "${displaydetect-}" = "true" ] && ! command_exists fbset; then
+    warn "displaydetect=true is set but fbset is not installed — layout scaling disabled"
+fi
+if ! command_exists bc; then
+    error "bc is not installed — required for layout generation and arithmetic"
+    exit 1
 fi
 
 # Function to generate a new layout file based on the default
@@ -232,6 +265,7 @@ start)
         fi
     fi
     
+    # Write PID file immediately — the monitor loop checks for it on first iteration.
     write_pid_file
     
     # Kill any existing omxplayer processes
@@ -280,9 +314,28 @@ start)
     echo $! > "${MONITOR_PIDFILE}.tmp" && mv "${MONITOR_PIDFILE}.tmp" "$MONITOR_PIDFILE"
     info "Monitoring process started with PID: $(cat $MONITOR_PIDFILE)"
     info "Displaycameras service started successfully."
-    # Wait for background jobs so the PID file stays alive and
-    # the signal handler can catch SIGTERM for graceful shutdown.
-    wait
+    log_event "service.started"
+    
+    # Supervisor loop — runs as the main process. Systemd (Type=simple)
+    # tracks this PID. If rotation or monitor die, exit non-zero and
+    # systemd restarts via Restart=on-failure.
+    while true; do
+        if [ -f "$ROTATE_PIDFILE" ]; then
+            rpid=$(cat "$ROTATE_PIDFILE")
+            if ! kill -0 "$rpid" 2>/dev/null; then
+                error "Rotation process (PID $rpid) died unexpectedly — exiting for restart"
+                exit 1
+            fi
+        fi
+        if [ -f "$MONITOR_PIDFILE" ]; then
+            mpid=$(cat "$MONITOR_PIDFILE")
+            if ! kill -0 "$mpid" 2>/dev/null; then
+                error "Monitor process (PID $mpid) died unexpectedly — exiting for restart"
+                exit 1
+            fi
+        fi
+        sleep 10
+    done
     ;;
     
 stop)

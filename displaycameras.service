@@ -8,20 +8,18 @@ After=cron.service
 Wants=network-online.target
 
 [Service]
-# Type=oneshot with RemainAfterExit=yes keeps the service marked active after
-# ExecStart completes. The start command blocks on 'wait' so it stays alive
-# as long as the background rotation/monitor loops run. Systemd cannot detect
-# if those background processes crash -- they are monitored internally via
-# PID files and the cron-based repair job.
-Type=oneshot
-Restart=no
-TimeoutSec=infinity
+# Type=simple: systemd tracks the main process directly. The start command
+# launches streams, rotation, and monitor loops, then enters a supervisor
+# loop that checks children every 10s. If rotation or monitor die, the
+# main process exits non-zero and systemd restarts via Restart=on-failure.
+# SIGTERM triggers graceful shutdown via the handle_signal() trap.
+Type=simple
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
 IgnoreSIGPIPE=no
 LimitNPROC=1
 KillMode=control-group
-GuessMainPID=no
-RemainAfterExit=yes
-SuccessExitStatus=5 6
 ExecStart=/usr/bin/displaycameras start
 ExecStop=/usr/bin/displaycameras stop
 ExecReload=/usr/bin/displaycameras restart
