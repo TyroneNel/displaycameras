@@ -92,6 +92,12 @@ generate_layout_file() {
         return 1
     fi
 
+    # Validate resolution format
+    if [[ ! "$resolution" =~ ^[0-9]+x[0-9]+$ ]]; then
+        error "Invalid resolution format: $resolution (expected WIDTHxHEIGHT)"
+        return 1
+    fi
+
     # Extract target dimensions
     local target_w=$(echo "$resolution" | cut -d'x' -f1)
     local target_h=$(echo "$resolution" | cut -d'x' -f2)

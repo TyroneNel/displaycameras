@@ -26,7 +26,13 @@ cleanup_orphan_processes() {
             child_count=$(pgrep -P "$wrapper_pid" 2>/dev/null | wc -l)
             if [ "$child_count" -eq 0 ]; then
                 warn "Cleaning up defunct wrapper process $wrapper_pid for $name"
-                kill -9 "$wrapper_pid" 2>/dev/null || true
+                # SIGTERM first — allows proper cleanup
+                timeout 3 kill -15 "$wrapper_pid" 2>/dev/null || true
+                sleep 1
+                # Escalate to SIGKILL if still alive
+                if kill -0 "$wrapper_pid" 2>/dev/null; then
+                    timeout 3 kill -9 "$wrapper_pid" 2>/dev/null || true
+                fi
             fi
         done
     done

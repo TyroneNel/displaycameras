@@ -4,6 +4,7 @@
 # on a full-HD monitor.  If this suites your needs, modify only the camera names to taste and feed URLs to what your
 # cameras or NVR provides. Window names 2x2 screen (for 1920x1080 screens)
 
+# Documentation only — not used by code. See window_positions below.
 windows=(large_left top_right middle_right bottom_right
 #bottom_center bottom_left
 )
