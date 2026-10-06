@@ -40,4 +40,4 @@ displaydetect=true
 rotatedelay=70
 
 # Enable debug logging
-debug="true"
+debug="false"

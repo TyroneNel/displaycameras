@@ -104,7 +104,6 @@ rotate_displays() {
             fi
         done
         
-        info "Saving current display sequence: $DISPLAY_SEQUENCE"
-        echo $DISPLAY_SEQUENCE > $DISPLAY_SEQUENCE_FILE
+
     done
 }

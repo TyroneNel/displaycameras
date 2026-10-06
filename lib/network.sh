@@ -5,7 +5,7 @@ check_network_connectivity() {
     local url="$1"
     local host=$(echo "$url" | awk -F[/:] '{print $4}')
     local port=$(echo "$url" | awk -F[/:] '{print $5}')
-    local max_attempts=3
+    local max_attempts=2
     local attempt=1
     
     if [ -z "$port" ]; then
@@ -25,7 +25,7 @@ check_network_connectivity() {
             fi
         fi
         attempt=$((attempt + 1))
-        sleep 1
+        [ $attempt -le $max_attempts ] && sleep 1
     done
     
     error "Failed to reach host $host$port_msg after $max_attempts attempts"
