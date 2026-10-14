@@ -13,12 +13,16 @@ Wants=network-online.target
 # loop that checks children every 10s. If rotation or monitor die, the
 # main process exits non-zero and systemd restarts via Restart=on-failure.
 # SIGTERM triggers graceful shutdown via the handle_signal() trap.
+# KillMode=control-group signals the whole cgroup on stop/restart, so no
+# stale supervisor (rotation/monitor) or helper (fbi, dbus-daemon) survives
+# to co-manage streams with the new instance. All loops trap SIGTERM and
+# exit cleanly; leftovers get SIGKILL after TimeoutStopSec.
 Type=simple
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=30
 IgnoreSIGPIPE=no
-KillMode=process
+KillMode=control-group
 ExecStart=/usr/bin/displaycameras start
 ExecStop=/usr/bin/displaycameras stop
 ExecReload=/usr/bin/displaycameras restart
