@@ -178,18 +178,33 @@ cleanup_file "$DIR/displaycameras.service" "/etc/systemd/system/displaycameras.s
 /bin/chown root:root /etc/systemd/system/displaycameras.service
 
 info "Installing configuration files..."
-if [ -d "/etc/displaycameras" ]; then
-    info "Backing up existing configuration to /etc/displaycameras/bak..."
-    /bin/mkdir -p /etc/displaycameras/bak
-    for conf_file in displaycameras.conf layout.conf.default layout.conf.1920x1080; do
-        [ -f "/etc/displaycameras/$conf_file" ] && /bin/mv -f "/etc/displaycameras/$conf_file" /etc/displaycameras/bak/ 2>/dev/null || true
-    done
-fi
-cleanup_file "$DIR/displaycameras.conf" "/etc/displaycameras/displaycameras.conf"
-cleanup_file "$DIR/layout.conf.default" "/etc/displaycameras/layout.conf.default"
-cleanup_file "$DIR/layout.conf.1920x1080" "/etc/displaycameras/layout.conf.1920x1080"
-/bin/chown root:root /etc/displaycameras/*
-/bin/chmod 0644 /etc/displaycameras/*
+/bin/mkdir -p /etc/displaycameras
+/bin/mkdir -p /etc/displaycameras/bak
+# Repo is truth for CODE; Pi /etc is truth for CONFIGS (see SYNC.md).
+# Never overwrite a live config: back it up with a timestamp and leave it.
+# Fresh installs fall back to the .example templates (real configs are
+# git-ignored and never shipped in the repo).
+for conf_file in displaycameras.conf layout.conf.default layout.conf.1920x1080; do
+    dest="/etc/displaycameras/$conf_file"
+    if [ -f "$dest" ]; then
+        info "Preserving existing $conf_file (backing up, leaving live file untouched)..."
+        /bin/cp -f "$dest" "/etc/displaycameras/bak/${conf_file}.$(date +%Y%m%d-%H%M%S)" || true
+        continue
+    fi
+    if [ -f "$DIR/$conf_file" ]; then
+        info "Installing $conf_file from repo copy..."
+        cleanup_file "$DIR/$conf_file" "$dest"
+    elif [ -f "$DIR/${conf_file}.example" ]; then
+        info "Installing $conf_file from ${conf_file}.example template..."
+        cleanup_file "$DIR/${conf_file}.example" "$dest"
+        warn "Installed default $conf_file from example — edit /etc/displaycameras/$conf_file with real camera URLs."
+    else
+        warn "No template found for $conf_file — skipping (service needs it to start)."
+        continue
+    fi
+    /bin/chown root:root "$dest"
+    /bin/chmod 0644 "$dest"
+done
 
 info "Installing cron job and logrotate configuration..."
 cleanup_file "$DIR/repaircameras.cron" "/etc/cron.d/repaircameras"

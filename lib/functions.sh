@@ -45,7 +45,7 @@ validate_camera_config() {
         
         # Check RTSP URL format
         if ! [[ "$feed" =~ $valid_url_regex ]]; then
-            error "Invalid camera feed URL for '$name': $feed"
+            error "Invalid camera feed URL for '$name': $(redact_url "$feed")"
             errors=$((errors + 1))
         fi
     done

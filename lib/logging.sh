@@ -145,6 +145,21 @@ log_stream_action() {
     log 3 "${kv# }"
 }
 
+# Strip credentials from a URL for safe logging.
+# Only redacts userinfo in the authority section (before the first '/'),
+# so a stray '@' in the path is left alone.
+# rtsp://user:pass@host:554/s1 -> rtsp://***@host:554/s1
+# URLs without userinfo pass through unchanged.
+redact_url() {
+    local scheme="${1%%://*}"
+    local rest="${1#*://}"
+    local authority="${rest%%/*}"
+    case "$authority" in
+        *@*) printf '%s://***@%s%s' "$scheme" "${authority##*@}" "${rest#"$authority"}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 # ── Console-only output (never logged to file) ──
 
 # For the 'status' command: writes to stdout only.
