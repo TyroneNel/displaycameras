@@ -75,6 +75,7 @@ rotate_displays() {
         fi
         debug "New DISPLAY_SEQUENCE: $DISPLAY_SEQUENCE"
         log_event "rotation.rotate" "sequence" "$DISPLAY_SEQUENCE"
+        info "Saving current display sequence: $DISPLAY_SEQUENCE"
         echo $DISPLAY_SEQUENCE > $DISPLAY_SEQUENCE_FILE
         
         # Check system resources before rotation
