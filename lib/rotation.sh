@@ -3,6 +3,7 @@
 # Configurable sleep delays (in seconds)
 : ${rotation_sleep:=1}          # Sleep between camera repositioning during rotation
 : ${dbus_pause:=0.5}            # Brief pause to allow DBus commands to process
+: ${rotation_parallel:=false}
 
 # Function to check if rotation is active
 check_rotation_status() {
@@ -22,6 +23,30 @@ check_rotation_status() {
     fi
     
     return 1
+}
+
+# Reposition every camera for the current DISPLAY_SEQUENCE.
+# Sequential (rotation_parallel=false): one at a time with rotation_sleep
+# between (gentle on DBus/GPU, ~4s for 4 cameras).
+# Parallel (rotation_parallel=true): all DBus setvideopos calls fire at
+# once into the background, then a single wait (~0.5s total). Safe because
+# each reposition targets a unique per-camera DBus name. Off-screen stops
+# and on-screen restarts stay sequential — they kill/spawn processes and
+# must not race each other.
+reposition_all() {
+    if [ "${rotation_parallel:=false}" = "true" ]; then
+        debug "Repositioning all cameras in parallel"
+        for i in ${!camera_names[*]}; do
+            control_player "reposition" "$i" &
+        done
+        wait
+        return 0
+    fi
+    for i in ${!camera_names[*]}; do
+        debug "Rotation reposition for camera_idx: $i"
+        control_player "reposition" "$i"
+        sleep "$rotation_sleep"
+    done
 }
 
 # Function to start rotation
@@ -85,16 +110,13 @@ rotate_displays() {
         fi
         
         # Rotate each stream
-        for i in ${!camera_names[*]}; do
-            debug "Rotation reposition for camera_idx: $i"
-            control_player "reposition" "$i"
-            sleep "$rotation_sleep"
-        done
+        reposition_all
         
         # Restart off-screen cameras that are now on-screen
         local num_windows=${#window_positions[@]}
         for i in ${!camera_names[*]}; do
-            local display_rank=$(((i - DISPLAY_SEQUENCE + ${#camera_names[@]}) % ${#camera_names[@]}))
+            local display_rank
+            display_rank=$(camera_display_rank "$i")
             local camera_name="${camera_names[$i]}"
             if [ "$display_rank" -lt "$num_windows" ]; then
                 if [ "${camera_offscreen_state[$camera_name]}" = "true" ]; then

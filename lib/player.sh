@@ -37,6 +37,19 @@ stop_stream() {
     # service shutdown by handle_signal() and the stop command.
 }
 
+# Rank of a camera in the current display order (0 = main window).
+# Single source of truth for on-screen vs off-screen placement:
+# rank < ${#window_positions[@]} means on-screen, else off-screen.
+camera_display_rank() {
+    local idx="$1"
+    local n=${#camera_names[@]}
+    if [ "$n" -eq 0 ]; then
+        echo 0
+        return 1
+    fi
+    echo $(( (idx - DISPLAY_SEQUENCE + n) % n ))
+}
+
 # Centralized function to control all omxplayer instances
 # ACTION: "start" or "reposition"
 # CAMERA_IDX: The index of the camera in the camera_names array
@@ -47,14 +60,11 @@ control_player() {
     debug "control_player called with action: $action, camera_idx: $camera_idx"
     
     local camera_name="${camera_names[$camera_idx]}"
-    local num_cameras=${#camera_names[@]}
     local num_windows=${#window_positions[@]}
     local position
 
-    # STATEFUL POSITIONING LOGIC
-    # Calculate the camera's rank in the current display order based on the rotation sequence.
-    # This rank determines if it's on-screen or off-screen.
-    local display_rank=$(((camera_idx - DISPLAY_SEQUENCE + num_cameras) % num_cameras))
+    local display_rank
+    display_rank=$(camera_display_rank "$camera_idx")
     
     if [ "$display_rank" -lt "$num_windows" ]; then
         # This camera should be on-screen. Its window is at index 'display_rank'.

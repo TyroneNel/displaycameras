@@ -39,5 +39,16 @@ displaydetect=true
 # When rotating camera feeds across a display, how many seconds does each rotation last? (default=5)
 rotatedelay=70
 
+# Rotation sweep speed: how the 4 repositions within one rotation step run.
+# Sequential (default, rotation_parallel=false): one camera at a time with
+# rotation_sleep between each (~4s per step for 4 cameras, gentle on DBus/GPU).
+# Parallel (rotation_parallel=true): all repositions fire at once (~0.5s per
+# step). Safe: each targets a unique per-camera DBus name.
+#rotation_parallel=false
+# Seconds between repositions in sequential mode (default 1, 0.5 minimum sane).
+#rotation_sleep=1
+# Pause after each reposition during service startup only (default 0.5).
+#dbus_pause=0.5
+
 # Enable debug logging
 debug="false"
