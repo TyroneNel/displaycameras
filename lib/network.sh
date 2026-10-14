@@ -1,10 +1,51 @@
 #!/bin/bash
 
+# Parse host and port from an RTSP URL, dynamically derived from the
+# configured camera feed (no hardcoded IPs).
+# Handles: rtsp://host:port/path, rtsp://host/path,
+#          rtsp://user:pass@host:port/path, rtsp://user@host/path,
+#          and bracketed IPv6 rtsp://[::1]:554/path.
+# Sets: _parsed_host and _parsed_port (empty if no port in URL).
+parse_rtsp_host_port() {
+    local url="$1"
+    _parsed_host=""
+    _parsed_port=""
+
+    local without_scheme="${url#*://}"
+    local authority="${without_scheme%%/*}"
+    case "$authority" in
+        *@*) authority="${authority##*@}" ;;
+    esac
+
+    case "$authority" in
+        \[*\]*)
+            _parsed_host="${authority%%\]*}"
+            _parsed_host="${_parsed_host#[}"
+            local remainder="${authority#*\]}"
+            case "$remainder" in
+                :*) _parsed_port="${remainder#:}" ;;
+            esac
+            ;;
+        *)
+            case "$authority" in
+                *:*)
+                    _parsed_host="${authority%%:*}"
+                    _parsed_port="${authority#*:}"
+                    ;;
+                *)
+                    _parsed_host="$authority"
+                    ;;
+            esac
+            ;;
+    esac
+}
+
 # Network connectivity check function
 check_network_connectivity() {
     local url="$1"
-    local host=$(echo "$url" | awk -F[/:] '{print $4}')
-    local port=$(echo "$url" | awk -F[/:] '{print $5}')
+    parse_rtsp_host_port "$url"
+    local host="$_parsed_host"
+    local port="$_parsed_port"
     local max_attempts=2
     local attempt=1
     
@@ -35,7 +76,8 @@ check_network_connectivity() {
 # Function to measure network latency
 measure_network_latency() {
     local url="$1"
-    local host=$(echo "$url" | awk -F[/:] '{print $4}')
+    parse_rtsp_host_port "$url"
+    local host="$_parsed_host"
     local samples=1
     local total_latency=0
     local successful_pings=0
